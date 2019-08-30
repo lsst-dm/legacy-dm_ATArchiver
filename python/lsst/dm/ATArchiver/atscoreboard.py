@@ -1,0 +1,112 @@
+# This file is part of dm_ATArchiver
+#
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+import json
+import logging
+from lsst.dm.ATArchiver.forwarder_info import ForwarderInfo
+# from collections import namedtuple
+from lsst.dm.csc.base.scoreboard import Scoreboard
+
+LOGGER = logging.getLogger(__name__)
+
+
+class ATScoreboard(Scoreboard):
+
+    def __init__(self, db, host, port=6379):
+        super().__init__("ATArchiver", db, host, port)
+
+        self.JOBNUM = "jobnum"
+        self.PAIRED_FORWARDER = "paired_forwarder"
+        self.FORWARDER_LIST = "forwarder_list"
+
+    def get_jobnum(self):
+        return self.conn.hget(self.device, self.JOBNUM)
+
+    def set_jobnum(self, jobnum):
+        self.conn.hset(self.device, self.JOBNUM, jobnum)
+
+    def pop_forwarder_from_list(self):
+        LOGGER.info(f"popping from {self.FORWARDER_LIST}")
+        data = self.conn.brpop(self.FORWARDER_LIST, 1)
+        if data is None:
+            raise RuntimeError("No forwarder available on scoreboard list")
+        item = data[1]
+        d = json.loads(item)
+        # info = namedtuple("ForwarderInfo", d.keys())(*d.values())
+        forwarder_info = ForwarderInfo(**d)
+        return forwarder_info
+
+    def push_forwarder_onto_list(self, forwarder_info):
+        info = forwarder_info.__dict__
+        data = json.dumps(info)
+        self.conn.lpush(self.FORWARDER_LIST, data)
+
+    def get_paired_forwarder_info(self):
+        data = self.conn.hget(self.device, self.PAIRED_FORWARDER)
+        info = json.loads(data)
+        forwarder_info = ForwarderInfo(**info)
+        return forwarder_info
+
+    def set_paired_forwarder_info(self, forwarder_info):
+        info = forwarder_info.__dict__
+        data = json.dumps(info)
+        self.conn.hset(self.device, self.PAIRED_FORWARDER, data)
+
+
+if __name__ == "__main__":
+
+    AT_ARCHIVER_DB = 15
+
+    board = ATScoreboard(db=AT_ARCHIVER_DB, host="localhost")
+
+    new_state = "DISABLED"
+    board.set_state(new_state)
+    state = board.get_state()
+    if state != new_state:
+        print(f"state was {state} and not {new_state} as expected")
+
+    new_session = "Session 1"
+    board.set_session(new_session)
+    session = board.get_session()
+    if session != new_session:
+        print(f"session was {session} and not {new_session} as expected")
+
+    new_jobnum = "Job 1"
+    board.set_jobnum(new_jobnum)
+    jobnum = board.get_jobnum()
+    if jobnum != new_jobnum:
+        print(f"jobnum was {jobnum} and not {new_jobnum} as expected")
+
+    new_forwarder_info = ForwarderInfo("test", "test_queue")
+    board.push_forwarder_onto_list(new_forwarder_info)
+    info = board.pop_forwarder_from_list()
+    if info.name != new_forwarder_info.name:
+        print(f"info.name was {info.name} and not {new_forwarder_info.name} as expected")
+    if info.queue != new_forwarder_info.queue:
+        print(f"info.queue was {info.queue} and not {new_forwarder_info.queue} as expected")
+
+    board.set_paired_forwarder_info(new_forwarder_info)
+
+    paired = board.get_paired_forwarder_info()
+    if paired.name != new_forwarder_info.name:
+        print(f"paired.name was {paired.name} and not {new_forwarder_info.name} as expected")
+    if paired.queue != new_forwarder_info.queue:
+        print(f"paired.queue was {paired.queue} and not {new_forwarder_info.queue} as expected")
