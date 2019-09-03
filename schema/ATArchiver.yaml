@@ -1,0 +1,9 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: https://github.com/lsst-dm/dm_ATArchiver/blob/master/schema/ATArchiver.yaml
+# title must end with one or more spaces followed by the schema version, which must begin with "v"
+title: ATArchiver v1
+description: Schema for ATArchiver configuration files
+type: object
+forwarder:
+    forwarder_consume_queue: f99_consume
+    forwarder_publish_queue: at_foreman_ack_publish
