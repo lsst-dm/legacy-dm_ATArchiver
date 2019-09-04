@@ -21,11 +21,12 @@
 
 import asyncio
 import logging
-
+import traceback
 from lsst.dm.csc.base.publisher import Publisher
 from lsst.dm.csc.base.consumer import Consumer
 
 from lsst.dm.csc.base.director import Director
+from lsst.dm.ATArchiver.atscoreboard import ATScoreboard
 
 LOGGER = logging.getLogger(__name__)
 
@@ -60,6 +61,10 @@ class ATDirector(Director):
         cdm = self.getConfiguration()
 
         root = cdm["ROOT"]
+
+        self.redis_host = root["REDIS_HOST"]
+        self.redis_db = root["ATARCHIVER_REDIS_DB"]
+
         self.forwarder_consume_queue = root["FORWARDER_CONSUME_QUEUE"]
         self.forwarder_publish_queue = root["FORWARDER_PUBLISH_QUEUE"]
         self.forwarder_host = root["FORWARDER_HOST"]
@@ -74,6 +79,7 @@ class ATDirector(Director):
         self.wfs_ccd = ats['WFS_CCD']
 
         self.heartbeat_lock = asyncio.Lock()
+        self.heartbeat_task = None
         self.heartbeat = None
 
         self.startIntegration_evt = asyncio.Event()
@@ -82,9 +88,52 @@ class ATDirector(Director):
         self.endReadout_evt = asyncio.Event()
         self.largeFileObjectAvailable_evt = asyncio.Event()
 
+        self.services_started_evt = asyncio.Event()
+
+        self.publisher = None
+        self.archive_consumer = None
+        self.forwarder_consumer = None
+        self.telemetry_consumer = None
+
+        self.scoreboard = None
+
+    async def start_services(self):
+        # this is the beginning of the start command, when we're about to go into disabled state
+        LOGGER.info("start_services called")
+
+        self.services_started_evt.set()
+        try:
+            self.scoreboard = ATScoreboard(db=self.redis_db, host=self.redis_host)
+        except Exception as e:
+            LOGGER.info(e)
+            msg = "could't establish connection with redis broker"
+            LOGGER.info(msg)
+            self.parent.fault(5701, msg)
+            return
+
+        forwarder_info = None
+        try:
+            forwarder_info = self.scoreboard.pop_forwarder_from_list()
+
+            LOGGER.info(f"pairing with forwarder {forwarder_info.name}")
+            # record which forwarder we're paired to
+            self.scoreboard.set_paired_forwarder_info(forwarder_info)
+        except Exception as e:
+            msg = f"no forwarder on forwarder_list in redis db {self.redis_db} on {self.redis_host}"
+            LOGGER.info(msg)
+            self.parent.fault(5701, msg)
+            return
+
+        await self.establish_connections(forwarder_info)
+
+    async def stop_services(self):
+        if self.services_started_evt.is_set():
+            await self.rescind_connections()
+            self.services_started_evt.clear()
+
     async def establish_connections(self, forwarder_info):
-        self.setup_publishers()
-        self.setup_consumers()
+        await self.setup_publishers()
+        await self.setup_consumers()
         self.heartbeat_task = asyncio.create_task(self.emit_heartbeat(forwarder_info))
 
     async def rescind_connections(self):
@@ -96,10 +145,11 @@ class ATDirector(Director):
 
     async def stop_heartbeat(self):
         LOGGER.info("stopping heartbeat")
-        self.heartbeat_task.cancel()
-        await self.heartbeat_task
+        if self.heartbeat_task is not None:
+                self.heartbeat_task.cancel()
+                await self.heartbeat_task
 
-    def setup_publishers(self):
+    async def setup_publishers(self):
         """ Set up base publisher with pub_base_broker_url by creating a new instance
             of AsyncioPublisher clas
 
@@ -108,14 +158,15 @@ class ATDirector(Director):
             :return: None.
         """
         LOGGER.info('Setting up ATArchiver publisher')
-        self.publisher = Publisher(self.base_broker_url)
-        self.publisher.start()
+        self.publisher = Publisher(self.base_broker_url, parent=self.parent)
+        await self.publisher.start()
 
     async def stop_publishers(self):
         LOGGER.info("stopping publishers")
-        await self.publisher.stop()
+        if self.publisher is not None:
+            await self.publisher.stop()
 
-    def setup_consumers(self):
+    async def setup_consumers(self):
         """ Create ThreadManager object with base broker url and kwargs to setup consumers.
 
             :params: None.
@@ -124,22 +175,26 @@ class ATDirector(Director):
         """
 
         # XXX - messages from ArchiverController?
-        self.archive_consumer = Consumer(self.base_broker_url, "archive_ctrl_publish", self.on_message)
+        self.archive_consumer = Consumer(self.base_broker_url, self.parent, "archive_ctrl_publish",
+                                         self.on_message)
         self.archive_consumer.start()
 
         # ack messages from Forwarder
-        self.forwarder_consumer = Consumer(self.base_broker_url, "at_foreman_ack_publish", self.on_message)
+        self.forwarder_consumer = Consumer(self.base_broker_url,  self.parent, "at_foreman_ack_publish", self.on_message)
         self.forwarder_consumer.start()
 
         # telemetry messages from forwarder
-        #self.telemetry_consumer = Consumer(self.base_broker_url, "at_foreman_telemetry", self.on_telemetry)
-        self.telemetry_consumer = Consumer(self.base_broker_url, "telemetry_queue", self.on_telemetry)
+        self.telemetry_consumer = Consumer(self.base_broker_url,  self.parent, "telemetry_queue", self.on_telemetry)
         self.telemetry_consumer.start()
 
     async def stop_consumers(self):
         LOGGER.info("stopping consumers")
-        self.archive_consumer.stop()
-        self.forwarder_consumer.stop()
+        if self.archive_consumer is not None:
+            self.archive_consumer.stop()
+        if self.forwarder_consumer is not None:
+            self.forwarder_consumer.stop()
+        if self.telemetry_consumer is not None:
+            self.telemetry_consumer.stop()
 
     def on_message(self, ch, method, properties, body):
         msg_type = body['MSG_TYPE']
@@ -320,8 +375,8 @@ class ATDirector(Director):
 
             interval = 5  # seconds
 
-            pub = Publisher(self.base_broker_url, logger_level=LOGGER.debug)
-            pub.start()
+            pub = Publisher(self.base_broker_url, parent=self.parent, logger_level=LOGGER.debug)
+            await pub.start()
 
             while True:
                 msg = {"MSG_TYPE": 'AT_FWDR_HEALTH_CHECK',
