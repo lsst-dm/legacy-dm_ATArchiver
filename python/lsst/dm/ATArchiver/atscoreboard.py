@@ -47,6 +47,7 @@ class ATScoreboard(Scoreboard):
         LOGGER.info(f"popping from {self.FORWARDER_LIST}")
         data = self.conn.brpop(self.FORWARDER_LIST, 1)
         if data is None:
+            LOGGER.info("No forwarder available on scoreboard list")
             raise RuntimeError("No forwarder available on scoreboard list")
         item = data[1]
         d = json.loads(item)

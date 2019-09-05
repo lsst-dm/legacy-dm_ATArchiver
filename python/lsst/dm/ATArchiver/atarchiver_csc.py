@@ -19,12 +19,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import asyncio
 import logging
 import pathlib
 from lsst.dm.csc.base.dm_csc import dm_csc
 from lsst.dm.ATArchiver.atdirector import ATDirector
-from lsst.dm.ATArchiver.atscoreboard import ATScoreboard
 from lsst.ts import salobj
+from lsst.ts.salobj import State
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,34 +55,26 @@ class ATArchiverCSC(dm_csc):
 
         self.director = ATDirector(self, "L1SystemCfg.yaml", "ATArchiverCSC.log")
 
-        config = self.director.getConfiguration()
-        self.redis_host = config["ROOT"]["REDIS_HOST"]
-        self.redis_db = int(config["ROOT"]["ATARCHIVER_REDIS_DB"])
-        self.scoreboard = None
         LOGGER.info("************************ Starting ATArchiver ************************")
 
     async def send_processingStatus(self, statusCode, description):
         LOGGER.info(f"sending {statusCode}: {description}")
         self.evt_processingStatus.set_put(statusCode=statusCode, description=description)
 
+    def report_summary_state(self):
+        super().report_summary_state()
+        if self.summary_state == State.STANDBY:
+            asyncio.ensure_future(self.stop_services())
+        elif self.summary_state == State.FAULT:
+            asyncio.ensure_future(self.stop_services())
+
+
     async def begin_start(self, data):
-        # this is the beginning of the start command, when we're about to go into disabled state
-        LOGGER.info("begin_start called")
+    #async def start_services(self):
+        await self.director.start_services()
 
-        self.scoreboard = ATScoreboard(db=self.redis_db, host=self.redis_host)
-
-        forwarder_info = self.scoreboard.pop_forwarder_from_list()
-
-        LOGGER.info(f"pairing with forwarder {forwarder_info.name}")
-        # record which forwarder we're paired to
-        self.scoreboard.set_paired_forwarder_info(forwarder_info)
-
-        # create consumers and publishers, and heartbeat
-        await self.director.establish_connections(forwarder_info)
-
-    async def begin_standby(self, data):
-        # About to go into standby state
-        await self.director.rescind_connections()
+    async def stop_services(self):
+        await self.director.stop_services()
 
     async def do_resetFromFault(self, data):
         print("do_resetFromFault called")
