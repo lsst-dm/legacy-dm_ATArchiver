@@ -51,7 +51,8 @@ class ATDirector(Director):
         super().__init__(config_filename, log_filename)
         self.parent = parent
 
-        self._msg_actions = {'AT_FWDR_HEALTH_CHECK_ACK': self.process_health_check_ack,
+        self._msg_actions = {'AT_FWDR_HEALTH_CHECK_ACK': self.process_forwarder_health_check_ack,
+                             'ARCHIVE_HEALTH_CHECK_ACK': self.process_archiver_health_check_ack,
                              'AT_FWDR_XFER_PARAMS_ACK': self.process_xfer_params_ack,
                              'AT_FWDR_END_READOUT_ACK': self.process_at_fwdr_end_readout_ack,
                              'AT_FWDR_HEADER_READY_ACK': self.process_header_ready_ack,
@@ -78,15 +79,16 @@ class ATDirector(Director):
         self.wfs_raft = ats['WFS_RAFT']
         self.wfs_ccd = ats['WFS_CCD']
 
-        self.heartbeat_lock = asyncio.Lock()
-        self.heartbeat_task = None
-        self.heartbeat = None
+        self.forwarder_heartbeat_task = None
+        self.archive_heartbeat_task = None
 
         self.startIntegration_evt = asyncio.Event()
-        self.startIntegration_info = None
         self.new_at_archive_item_evt = asyncio.Event()
         self.endReadout_evt = asyncio.Event()
         self.largeFileObjectAvailable_evt = asyncio.Event()
+
+        self.forwarder_heartbeat_evt = asyncio.Event()
+        self.archive_heartbeat_evt = asyncio.Event()
 
         self.services_started_evt = asyncio.Event()
 
@@ -115,7 +117,7 @@ class ATDirector(Director):
         try:
             forwarder_info = self.scoreboard.pop_forwarder_from_list()
 
-            LOGGER.info(f"pairing with forwarder {forwarder_info.name}")
+            LOGGER.info(f"pairing with forwarder {forwarder_info.hostname}")
             # record which forwarder we're paired to
             self.scoreboard.set_paired_forwarder_info(forwarder_info)
         except Exception as e:
@@ -131,23 +133,35 @@ class ATDirector(Director):
             await self.rescind_connections()
             self.services_started_evt.clear()
 
-    async def establish_connections(self, forwarder_info):
+    async def establish_connections(self, info):
         await self.setup_publishers()
         await self.setup_consumers()
-        self.heartbeat_task = asyncio.create_task(self.emit_heartbeat(forwarder_info))
+        self.forwarder_heartbeat_task = asyncio.create_task(self.emit_heartbeat(info.hostname, info.consume_queue,
+                                                                                'AT_FWDR_HEALTH_CHECK',
+                                                                                self.forwarder_heartbeat_evt))
+
+        self.archive_heartbeat_task = asyncio.create_task(self.emit_heartbeat("at_archive_controller",
+                                                                               "archive_ctrl_consume",
+                                                                               "ARCHIVE_HEALTH_CHECK",
+                                                                               self.archive_heartbeat_evt))
 
     async def rescind_connections(self):
         LOGGER.info("rescinding connections")
-        await self.stop_heartbeat()
+        await self.stop_heartbeats()
         await self.stop_publishers()
         await self.stop_consumers()
         LOGGER.info("all connections rescinded")
 
-    async def stop_heartbeat(self):
-        LOGGER.info("stopping heartbeat")
-        if self.heartbeat_task is not None:
-                self.heartbeat_task.cancel()
-                await self.heartbeat_task
+    async def stop_heartbeats(self):
+        LOGGER.info("stopping heartbeats")
+        beats = [self.forwarder_heartbeat_task, self.archive_heartbeat_task]
+        for beat in beats:
+            await self.stop_heartbeat_task(beat)
+
+    async def stop_heartbeat_task(self, task):
+        if task is not None:
+            task.cancel()
+            await task
 
     async def setup_publishers(self):
         """ Set up base publisher with pub_base_broker_url by creating a new instance
@@ -174,17 +188,19 @@ class ATDirector(Director):
             :return: None.
         """
 
-        # XXX - messages from ArchiverController?
+        # messages from ArchiverController
         self.archive_consumer = Consumer(self.base_broker_url, self.parent, "archive_ctrl_publish",
                                          self.on_message)
         self.archive_consumer.start()
 
-        # ack messages from Forwarder
-        self.forwarder_consumer = Consumer(self.base_broker_url,  self.parent, "at_foreman_ack_publish", self.on_message)
+        # ack messages from Forwarder & ArchiveController
+        self.forwarder_consumer = Consumer(self.base_broker_url,  self.parent, "at_foreman_ack_publish",
+                                           self.on_message)
         self.forwarder_consumer.start()
 
         # telemetry messages from forwarder
-        self.telemetry_consumer = Consumer(self.base_broker_url,  self.parent, "telemetry_queue", self.on_telemetry)
+        self.telemetry_consumer = Consumer(self.base_broker_url,  self.parent, "telemetry_queue",
+                                           self.on_telemetry)
         self.telemetry_consumer.start()
 
     async def stop_consumers(self):
@@ -218,13 +234,11 @@ class ATDirector(Director):
     def process_at_items_xferd_ack(self, msg):
         LOGGER.info("process_at_items_xferd: ack received")
 
-    def process_health_check_ack(self, msg):
-        # component = msg["COMPONENT"]
-        if self.heartbeat is not None:
-            LOGGER.debug("heartbeat set to 'acked'")
-            self.heartbeat = "acked"
-        else:
-            LOGGER.info("heartbeat wasn't initialized")
+    def process_forwarder_health_check_ack(self, msg):
+        self.forwarder_heartbeat_evt.clear()
+
+    def process_archiver_health_check_ack(self, msg):
+        self.archive_heartbeat_evt.clear()
 
     async def publish_message(self, queue, msg):
         await self.publisher.publish_message(queue, msg)
@@ -373,11 +387,9 @@ class ATDirector(Director):
     #
     # Heartbeat
     #
-    async def emit_heartbeat(self, forwarder_info):
+    async def emit_heartbeat(self, component_name, queue, msg_type, heartbeat_event):
         try:
-            name = forwarder_info.name
-            queue = forwarder_info.queue
-            LOGGER.info(f"starting heartbeat with {name} on {queue}")
+            LOGGER.info(f"starting heartbeat with {component_name} on {queue}")
 
             interval = 5  # seconds
 
@@ -385,20 +397,21 @@ class ATDirector(Director):
             await pub.start()
 
             while True:
-                msg = {"MSG_TYPE": 'AT_FWDR_HEALTH_CHECK',
+                msg = {"MSG_TYPE": msg_type,
                        "ACK_ID": 0,
+                       "SESSION_ID": self.get_session_id(),
                        "REPLY_QUEUE": "at_foreman_ack_publish"}
+                LOGGER.info(f"about to send {msg}")
                 await pub.publish_message(queue, msg)
 
-                LOGGER.debug("heartbeat sent")
-                self.heartbeat = "sent"
+                code=5751
+                report=f"failed to received heartbeat ack from {component_name}"
 
-                await asyncio.sleep(interval)
-                val = self.heartbeat
-                LOGGER.debug(f"heartbeat value is set to {val}")
-                if val == "sent":
-                    LOGGER.info("didn't get message back from forwarder")
-                    self.parent.fault(code=5751, report="failed to received heartbeat ack from forwarder")
+                waiter = Waiter(heartbeat_event, self.parent)
+                heartbeat_task = asyncio.create_task(waiter.pause(code, report))
+                await heartbeat_task
+                if heartbeat_event.is_set():
+                    await pub.stop()
                     return
         except asyncio.CancelledError:
             await pub.stop()

@@ -22,6 +22,7 @@
 
 class ForwarderInfo:
 
-    def __init__(self, name, queue):
-        self.name = name
-        self.queue = queue
+    def __init__(self, hostname, ip_address, consume_queue):
+        self.hostname = hostname
+        self.ip_address = ip_address
+        self.consume_queue = consume_queue
