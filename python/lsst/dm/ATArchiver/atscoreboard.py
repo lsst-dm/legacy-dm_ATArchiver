@@ -51,9 +51,8 @@ class ATScoreboard(Scoreboard):
             raise RuntimeError("No forwarder available on scoreboard list")
         item = data[1]
         d = json.loads(item)
-        # info = namedtuple("ForwarderInfo", d.keys())(*d.values())
-        forwarder_info = ForwarderInfo(**d)
-        return forwarder_info
+
+        return self.create_forwarder(d)
 
     def push_forwarder_onto_list(self, forwarder_info):
         info = forwarder_info.__dict__
@@ -62,9 +61,19 @@ class ATScoreboard(Scoreboard):
 
     def get_paired_forwarder_info(self):
         data = self.conn.hget(self.device, self.PAIRED_FORWARDER)
-        info = json.loads(data)
-        forwarder_info = ForwarderInfo(**info)
-        return forwarder_info
+        d = json.loads(data)
+        return self.create_forwarder(d)
+
+    def create_forwarder(self, d):
+        try:
+            hostname = d['hostname']
+            ip_address = d['ip_address']
+            consume_queue = d['consume_queue']
+            forwarder_info = ForwarderInfo(hostname=hostname, ip_address=ip_address, consume_queue=consume_queue)
+            return forwarder_info
+        except Exception as e:
+            LOGGER.info("Exception: "+str(e))
+            return None
 
     def set_paired_forwarder_info(self, forwarder_info):
         info = forwarder_info.__dict__
