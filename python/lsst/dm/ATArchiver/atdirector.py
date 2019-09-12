@@ -312,6 +312,12 @@ class ATDirector(Director):
 
         await self.publish_message("archive_ctrl_consume", msg)
 
+        code = 5752
+        report = f"No ack response from at archive controller"
+
+        waiter1 = Waiter(self.new_at_archive_item_evt, self.parent)
+        self.new_at_archive_item_ack_task = asyncio.create_task(waiter1.pause(code, report))
+
         msg = self.build_startIntegration_message(data)
 
         await self.publish_message(self.forwarder_consume_queue, msg)
@@ -319,8 +325,8 @@ class ATDirector(Director):
         code = 5752
         report = f"No xfer_params response from forwarder. Setting fault state with code = {code}"
 
-        waiter = Waiter(self.startIntegration_evt, self.parent)
-        self.startIntegration_ack_task = asyncio.create_task(waiter.pause(code, report))
+        waiter2 = Waiter(self.startIntegration_evt, self.parent)
+        self.startIntegration_ack_task = asyncio.create_task(waiter2.pause(code, report))
         LOGGER.info("startIntegration done")
 
     def process_xfer_params_ack(self, msg):
