@@ -214,7 +214,7 @@ class ATDirector(Director):
 
     def on_message(self, ch, method, properties, body):
         msg_type = body['MSG_TYPE']
-        if msg_type != 'AT_FWDR_HEALTH_CHECK_ACK':
+        if (msg_type != 'AT_FWDR_HEALTH_CHECK_ACK') and (msg_type != 'ARCHIVE_HEALTH_CHECK_ACK'):
             LOGGER.info("received message")
             LOGGER.info(body)
         ch.basic_ack(method.delivery_tag)
@@ -227,9 +227,6 @@ class ATDirector(Director):
 
     def process_ack(self, msg):
         pass
-
-    def process_new_at_item_ack(self, msg):
-        self.new_at_archive_item_evt.clear()
 
     def process_at_items_xferd_ack(self, msg):
         LOGGER.info("process_at_items_xferd: ack received")
@@ -279,12 +276,13 @@ class ATDirector(Director):
         d = {}
         d['MSG_TYPE'] = 'AT_FWDR_XFER_PARAMS'
         d['SESSION_ID'] = self.get_session_id()
-        d['IMAGE_ID'] = data.imageName
+        d['IMAGE_ID'] = data['IMAGE_ID']
         d['DEVICE'] = 'AT'
         d['JOB_NUM'] = self.get_jobnum()
         d['ACK_ID'] = 0
         d['REPLY_QUEUE'] = 'at_foreman_ack_publish'
-        location = f"{self.archive_name}@{self.archive_ip}:{self.archive_xfer_root}"
+        targetDir = data['TARGET_DIR']
+        location = f"{self.archive_name}@{self.archive_ip}:{targetDir}"
         d['TARGET_LOCATION'] = location
 
         xfer_params = {}
@@ -318,10 +316,30 @@ class ATDirector(Director):
         d['REPLY_QUEUE'] = 'at_foreman_ack_publish'
         return d
 
+    def process_new_at_item_ack(self, data):
+        self.new_at_archive_item_evt.clear()
+        LOGGER.info(f"{data}")
+        # this is scheduled, since process_new_at_item_ack is never await-ed
+        task = asyncio.create_task(self.send_startIntegration(data))
+
+    async def send_startIntegration(self, data):
+        msg = self.build_startIntegration_message(data)
+
+        await self.publish_message(self.forwarder_consume_queue, msg)
+        LOGGER.info("startIntegration sent to forwarder")
+
+        code = 5752
+        report = f"No xfer_params response from forwarder. Setting fault state with code = {code}"
+
+        waiter2 = Waiter(self.startIntegration_evt, self.parent)
+        self.startIntegration_ack_task = asyncio.create_task(waiter2.pause(code, report))
+
     #
     # startIntegration
     #
     async def transmit_startIntegration(self, data):
+
+        # first we send a message to the archiver, to obtain the correct target directory
         msg = self.build_archiver_message(data)
 
         await self.publish_message("archive_ctrl_consume", msg)
@@ -329,19 +347,12 @@ class ATDirector(Director):
         code = 5752
         report = f"No ack response from at archive controller"
 
+        # now we set up a wait for the ack. If the ack doesn't appear within the time 
+        # frame allotted, a fault is thrown.  Otherwise, when the ack message is received,
+        # the data is extracted within the "process_new_at_item_ack" method, and the
+        # "startIntegration" message is build and sent to the forwarder from that method
         waiter1 = Waiter(self.new_at_archive_item_evt, self.parent)
         self.new_at_archive_item_ack_task = asyncio.create_task(waiter1.pause(code, report))
-
-        msg = self.build_startIntegration_message(data)
-
-        await self.publish_message(self.forwarder_consume_queue, msg)
-
-        code = 5752
-        report = f"No xfer_params response from forwarder. Setting fault state with code = {code}"
-
-        waiter2 = Waiter(self.startIntegration_evt, self.parent)
-        self.startIntegration_ack_task = asyncio.create_task(waiter2.pause(code, report))
-        LOGGER.info("startIntegration done")
 
     def process_xfer_params_ack(self, msg):
         self.startIntegration_evt.clear()
@@ -401,7 +412,7 @@ class ATDirector(Director):
                        "ACK_ID": 0,
                        "SESSION_ID": self.get_session_id(),
                        "REPLY_QUEUE": "at_foreman_ack_publish"}
-                LOGGER.info(f"about to send {msg}")
+                LOGGER.debug(f"about to send {msg}")
                 await pub.publish_message(queue, msg)
 
                 code=5751
