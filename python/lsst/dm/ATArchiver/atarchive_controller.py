@@ -3,6 +3,7 @@ import datetime
 import logging
 import os
 import os.path
+import sys
 from lsst.dm.csc.base.consumer import Consumer
 from lsst.dm.csc.base.publisher import Publisher
 from lsst.ctrl.iip.base import base
@@ -26,9 +27,28 @@ class ATArchiveController(base):
         root = cdm['ROOT']
         archive = root['ARCHIVE']
 
-        self.atforwarder_staging_dir = archive['ATFORWARDER_STAGING']
-        self.oods_staging_dir = archive['OODS_STAGING']
-        self.dbb_staging_dir = archive['DBB_STAGING']
+        if 'ATFORWARDER_STAGING' in archive:
+            self.atforwarder_staging_dir = archive['ATFORWARDER_STAGING']
+            LOGGER.info(f"forwarder will stage to {self.atforwarder_staging_dir}")
+        else:
+            msg = "ARCHIVE.ATFORWARDER_STAGING does not exist in configuration file"
+            LOGGER.warn(msg)
+            sys.exit(0)
+        self.oods_staging_dir = None
+        if 'OODS_STAGING' in archive:
+            self.oods_staging_dir = archive['OODS_STAGING']
+            LOGGER.info(f"oods files will be staged to {self.oods_staging_dir}")
+        else:
+            msg = "ARCHIVE.OODS_STAGING does not exist in config file; will not link for OODS"
+            LOGGER.warn(msg)
+
+        self.dbb_staging_dir = None
+        if 'DBB_STAGING' in archive:
+            self.dbb_staging_dir = archive['DBB_STAGING']
+            LOGGER.info(f"dbb files will be staged to {self.dbb_staging_dir}")
+        else:
+            msg = "ARCHIVE.DBB_STAGING does not exist in config file; will not link for DBB"
+            LOGGER.warn(msg)
 
         dir_list = [self.atforwarder_staging_dir, self.oods_staging_dir, self.dbb_staging_dir]
 
@@ -67,7 +87,8 @@ class ATArchiveController(base):
 
     def create_directories(self, dir_list):
         for directory in dir_list:
-            os.makedirs(os.path.dirname(directory), exist_ok=True)
+            if directory is not None:
+                os.makedirs(os.path.dirname(directory), exist_ok=True)
 
     async def setup_publishers(self):
         LOGGER.info("Setting up ATArchiveController publisher")
@@ -176,28 +197,36 @@ class ATArchiveController(base):
     async def process_file_transfer_completed_ack(self, msg):
         LOGGER.info(f'ack received: {msg}')
 
-    def create_links_to_file(self, filename):
+    def create_link_to_file(self, filename, dirname):
         # remove the staging area portion from the filepath
         basefile = filename.replace(self.atforwarder_staging_dir, '').lstrip('/')
-        # create a new full path to where the file will be linked for the DBB
-        new_dbb_file = os.path.join(self.dbb_staging_dir, basefile)
+
         # create a new full path to where the file will be linked for the OODS
-        new_oods_file = os.path.join(self.oods_staging_dir, basefile)
+        new_file = os.path.join(dirname, basefile)
 
-        # create the directory path where the file will be linked for the DBB
-        new_dbb_dir = os.path.dirname(new_dbb_file)
-        os.makedirs(new_dbb_dir, exist_ok=True)
-        # create the directory path where the file will be linked for the OODS
-        new_oods_dir = os.path.dirname(new_oods_file)
-        os.makedirs(new_oods_dir, exist_ok=True)
-
+        # hard link the file in the staging area
         try:
-                # hard link the file in the staging area to the OODS
-                os.link(filename, new_oods_file)
-                # hard link the file in the staging area to the DBB
-                os.link(filename, new_dbb_file)
+            # create the directory path where the file will be linked for the OODS
+            new_dir = os.path.dirname(new_file)
+            os.makedirs(new_dir, exist_ok=True)
+            # hard link the file in the staging area
+            os.link(filename, new_file)
+            LOGGER.info(f"created link to {new_file}")
         except Exception as e:
-            LOGGER.info(f'{e}')
-        finally:
+            LOGGER.info(f'{e.message}')
+            return False
+        return True
+
+    def create_links_to_file(self, forwarder_filename):
+
+        linked = False
+        if self.dbb_staging_dir is not None:
+            linked = self.create_link_to_file(forwarder_filename, self.dbb_staging_dir)
+
+        if self.oods_staging_dir is not None:
+            linked = self.create_link_to_file(forwarder_filename, self.oods_staging_dir)
+
+        if linked:
             # remove the original file, since we've linked it
-            os.unlink(filename)
+            LOGGER.info(f"link was created successfully; removing {forwarder_filename}")
+            os.unlink(forwarder_filename)
