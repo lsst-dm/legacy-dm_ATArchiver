@@ -50,8 +50,6 @@ class ATArchiveController(base):
             msg = "ARCHIVE.DBB_STAGING does not exist in config file; will not link for DBB"
             LOGGER.warn(msg)
 
-        dir_list = [self.atforwarder_staging_dir, self.oods_staging_dir, self.dbb_staging_dir]
-
         self.CHECKSUM_TYPE = None
         if 'CHECKSUM_TYPE' in archive:
             self.CHECKSUM_TYPE = archive['CHECKSUM_TYPE']
@@ -114,6 +112,9 @@ class ATArchiveController(base):
         self.consumer.start()
 
     def on_message(self, ch, method, properties, body):
+        if 'MSG_TYPE' not in body:
+            LOGGER.info(f'received invalid message: {body}')
+            return
         msg_type = body['MSG_TYPE']
         if msg_type != 'ARCHIVE_HEALTH_CHECK':
             LOGGER.info("received message")
@@ -160,7 +161,10 @@ class ATArchiveController(base):
         if os.path.isdir(final_target_dir):
             pass
         else:
-            os.mkdir(final_target_dir, 0o2775)
+            try:
+                os.mkdir(final_target_dir, 0o2775)
+            except Exception as e:
+                LOGGER.error(f'failure to create {final_target_dir}: {e}')
             os.chmod(final_target_dir, 0o775)
 
         return final_target_dir
