@@ -286,8 +286,8 @@ class ATDirector(Director):
         d['TARGET_LOCATION'] = location
 
         xfer_params = {}
-        xfer_params['RAFT_LIST'] = [self.wfs_raft]
-        xfer_params['RAFT_CCD_LIST'] = [[self.wfs_ccd]]
+        xfer_params['RAFT_LIST'] = self.wfs_raft
+        xfer_params['RAFT_CCD_LIST'] = self.wfs_ccd
         xfer_params['AT_FWDR'] = self.forwarder_host  # self._current_fwdr['FQN']
 
         d['XFER_PARAMS'] = xfer_params
