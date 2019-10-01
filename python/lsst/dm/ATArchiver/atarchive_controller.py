@@ -171,16 +171,16 @@ class ATArchiveController(base):
 
     async def process_health_check(self, msg):
         ack_msg = self.build_health_ack_message(msg)
-        await self.publish.publish_message('at_foreman_ack_publish', ack_msg)
+        await self.publisher.publish_message('at_foreman_ack_publish', ack_msg)
 
-    def process_new_at_archive_item(self, msg):
+    async def process_new_at_archive_item(self, msg):
         # send this to the archive staging area
         target_dir = self.construct_send_target_dir(self.atforwarder_staging_dir)
 
         ack_msg = self.build_new_item_ack_message(target_dir, msg)
 
         reply_queue = msg['REPLY_QUEUE']
-        self.publisher.publish_message(reply_queue, ack_msg)
+        await self.publisher.publish_message(reply_queue, ack_msg)
 
     def build_file_transfer_completed_ack(self, data):
         d = {}
