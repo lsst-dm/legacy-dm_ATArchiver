@@ -172,7 +172,7 @@ class ATDirector(Director):
             :return: None.
         """
         LOGGER.info('Setting up ATArchiver publisher')
-        self.publisher = Publisher(self.base_broker_url, parent=self.parent)
+        self.publisher = Publisher(self.base_broker_url, csc_parent=self.parent)
         await self.publisher.start()
 
     async def stop_publishers(self):
@@ -404,7 +404,7 @@ class ATDirector(Director):
 
             interval = 5  # seconds
 
-            pub = Publisher(self.base_broker_url, parent=self.parent, logger_level=LOGGER.debug)
+            pub = Publisher(self.base_broker_url, csc_parent=self.parent, logger_level=LOGGER.debug)
             await pub.start()
 
             while True:
