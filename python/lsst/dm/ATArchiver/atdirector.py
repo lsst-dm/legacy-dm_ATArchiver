@@ -33,13 +33,14 @@ LOGGER = logging.getLogger(__name__)
 
 class Waiter:
 
-    def __init__(self, evt, parent):
+    def __init__(self, evt, parent, timeout):
         self.evt = evt
         self.evt.set()
         self.parent = parent
+        self.timeout = timeout
 
     async def pause(self, code, report):
-        await asyncio.sleep(5)
+        await asyncio.sleep(self.timeout)
         if self.evt.is_set():
             LOGGER.info(report)
             self.parent.fault(code=code, report=report)
@@ -61,7 +62,15 @@ class ATDirector(Director):
 
         cdm = self.getConfiguration()
 
+        LOGGER.info(f'******* Initializing ATArchiver ******')
         root = cdm["ROOT"]
+
+        if "ACK_TIMEOUT" in root:
+            self.ack_timeout = root["ACK_TIMEOUT"]
+            LOGGER.info(f'message ack timeout set to {self.ack_timeout}')
+        else:
+            self.ack_timeout = 5
+            LOGGER.info(f'ACK_TIMEOUT not specified in configuation file; default message ack timeout set to {self.ack_timeout}')
 
         self.redis_host = root["REDIS_HOST"]
         self.redis_db = root["ATARCHIVER_REDIS_DB"]
@@ -165,7 +174,7 @@ class ATDirector(Director):
 
     async def setup_publishers(self):
         """ Set up base publisher with pub_base_broker_url by creating a new instance
-            of AsyncioPublisher clas
+            of AsyncioPublisher class
 
             :params: None.
 
@@ -331,7 +340,7 @@ class ATDirector(Director):
         code = 5752
         report = f"No xfer_params response from forwarder. Setting fault state with code = {code}"
 
-        waiter2 = Waiter(self.startIntegration_evt, self.parent)
+        waiter2 = Waiter(self.startIntegration_evt, self.parent, self.ack_timeout)
         self.startIntegration_ack_task = asyncio.create_task(waiter2.pause(code, report))
 
     #
@@ -351,7 +360,7 @@ class ATDirector(Director):
         # frame allotted, a fault is thrown.  Otherwise, when the ack message is received,
         # the data is extracted within the "process_new_at_item_ack" method, and the
         # "startIntegration" message is build and sent to the forwarder from that method
-        waiter1 = Waiter(self.new_at_archive_item_evt, self.parent)
+        waiter1 = Waiter(self.new_at_archive_item_evt, self.parent, self.ack_timeout)
         self.new_at_archive_item_ack_task = asyncio.create_task(waiter1.pause(code, report))
 
     def process_xfer_params_ack(self, msg):
@@ -369,7 +378,7 @@ class ATDirector(Director):
         code = 5753
         report = f"No endReadout ack from forwarder. Setting fault state with code = {code}"
 
-        waiter = Waiter(self.endReadout_evt, self.parent)
+        waiter = Waiter(self.endReadout_evt, self.parent, self.ack_timeout)
         self.endReadout_ack_task = asyncio.create_task(waiter.pause(code, report))
 
     def process_at_fwdr_end_readout_ack(self, msg):
@@ -387,7 +396,7 @@ class ATDirector(Director):
         code = 5754
         report = f"No largeFileObjectAvailable ack from forwarder. Setting fault state with code = {code}"
 
-        waiter = Waiter(self.largeFileObjectAvailable_evt, self.parent)
+        waiter = Waiter(self.largeFileObjectAvailable_evt, self.parent, self.ack_timeout)
         self.largeFileObjectAvailable_ack_task = asyncio.create_task(waiter.pause(code, report))
 
     def process_header_ready_ack(self, msg):
@@ -401,8 +410,6 @@ class ATDirector(Director):
     async def emit_heartbeat(self, component_name, queue, msg_type, heartbeat_event):
         try:
             LOGGER.info(f"starting heartbeat with {component_name} on {queue}")
-
-            interval = 5  # seconds
 
             pub = Publisher(self.base_broker_url, csc_parent=self.parent, logger_level=LOGGER.debug)
             await pub.start()
@@ -418,7 +425,7 @@ class ATDirector(Director):
                 code=5751
                 report=f"failed to received heartbeat ack from {component_name}"
 
-                waiter = Waiter(heartbeat_event, self.parent)
+                waiter = Waiter(heartbeat_event, self.parent, self.ack_timeout)
                 heartbeat_task = asyncio.create_task(waiter.pause(code, report))
                 await heartbeat_task
                 if heartbeat_event.is_set():
