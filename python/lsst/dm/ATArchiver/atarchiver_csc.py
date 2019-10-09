@@ -143,6 +143,7 @@ class ATArchiverCSC(dm_csc):
         if self.transitioning_to_fault_evt.is_set():
             return
         self.transitioning_to_fault_evt.set()
+        LOGGER.info(report)
         self.fault(code, report)
 
     async def start_services(self):

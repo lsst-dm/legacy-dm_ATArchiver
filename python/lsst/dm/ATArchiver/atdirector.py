@@ -42,7 +42,6 @@ class Waiter:
     async def pause(self, code, report):
         await asyncio.sleep(self.timeout)
         if self.evt.is_set():
-            LOGGER.info(report)
             self.parent.call_fault(code=code, report=report)
 
 class Beacon:
