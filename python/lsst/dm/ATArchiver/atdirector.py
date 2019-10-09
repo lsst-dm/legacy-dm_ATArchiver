@@ -43,8 +43,42 @@ class Waiter:
         await asyncio.sleep(self.timeout)
         if self.evt.is_set():
             LOGGER.info(report)
-            self.parent.fault(code=code, report=report)
+            self.parent.call_fault(code=code, report=report)
 
+class Beacon:
+    def __init__(self, evt, scoreboard):
+        self.evt = evt
+        self.evt.clear()
+        self.scoreboard = scoreboard
+
+    async def ping(self, forwarder_info, seconds_to_expire, seconds_to_update):
+        while True:
+            if self.evt.is_set(): # if this is set, we were asked to shut down.
+                LOGGER.info(f"stopping beacon for {forwarder_info.hostname}")
+                self.scoreboard.delete_forwarder_association()
+                return
+            LOGGER.info(f"beacon setting {forwarder_info.hostname}")
+            self.scoreboard.set_forwarder_association(forwarder_info.hostname,seconds_to_expire)
+            await asyncio.sleep(seconds_to_update)
+
+class Watcher:
+    def __init__(self, evt, parent, scoreboard):
+        self.evt = evt
+        self.evt.clear()
+        self.parent = parent
+        self.scoreboard = scoreboard
+
+    async def peek(self, forwarder_key, seconds_until_next_peek):
+        while True:
+            if self.evt.is_set():  # if this is set, we were asked to shut down.
+                return
+            if self.scoreboard.check_forwarder_presence(forwarder_key) is None:
+                code = 5755
+                report = "Forwarder is does not appear to be alive.  Going into fault state"
+                LOGGER.info(report)
+                self.parent.call_fault(code=code, report=report)
+                return
+            await asyncio.sleep(seconds_until_next_peek)
 
 class ATDirector(Director):
 
@@ -52,12 +86,12 @@ class ATDirector(Director):
         super().__init__(config_filename, log_filename)
         self.parent = parent
 
-        self._msg_actions = {'AT_FWDR_HEALTH_CHECK_ACK': self.process_forwarder_health_check_ack,
-                             'ARCHIVE_HEALTH_CHECK_ACK': self.process_archiver_health_check_ack,
+        self._msg_actions = {'ARCHIVE_HEALTH_CHECK_ACK': self.process_archiver_health_check_ack,
                              'AT_FWDR_XFER_PARAMS_ACK': self.process_xfer_params_ack,
                              'AT_FWDR_END_READOUT_ACK': self.process_at_fwdr_end_readout_ack,
                              'AT_FWDR_HEADER_READY_ACK': self.process_header_ready_ack,
                              'AT_ITEMS_XFERD_ACK': self.process_at_items_xferd_ack,
+                             'ASSOCIATION_ACK': self.process_association_ack,
                              'NEW_AT_ARCHIVE_ITEM_ACK': self.process_new_at_item_ack}
 
         cdm = self.getConfiguration()
@@ -84,22 +118,29 @@ class ATDirector(Director):
         self.archive_ip = archive['ARCHIVE_IP']
         self.archive_xfer_root = archive['ARCHIVE_XFER_ROOT']
 
+        csc = root['CSC']
+        beacon = csc['BEACON']
+        self.seconds_to_expire = beacon['SECONDS_TO_EXPIRE']
+        self.seconds_to_update = beacon['SECONDS_TO_UPDATE']
+
         ats = root['ATS']
         self.wfs_raft = ats['WFS_RAFT']
         self.wfs_ccd = ats['WFS_CCD']
 
-        self.forwarder_heartbeat_task = None
         self.archive_heartbeat_task = None
+
+        self.association_evt = asyncio.Event()
 
         self.startIntegration_evt = asyncio.Event()
         self.new_at_archive_item_evt = asyncio.Event()
         self.endReadout_evt = asyncio.Event()
         self.largeFileObjectAvailable_evt = asyncio.Event()
 
-        self.forwarder_heartbeat_evt = asyncio.Event()
         self.archive_heartbeat_evt = asyncio.Event()
 
         self.services_started_evt = asyncio.Event()
+
+        self.stop_forwarder_beacon_evt = asyncio.Event()
 
         self.publisher = None
         self.archive_consumer = None
@@ -119,7 +160,7 @@ class ATDirector(Director):
             LOGGER.info(e)
             msg = "could't establish connection with redis broker"
             LOGGER.info(msg)
-            self.parent.fault(5701, msg)
+            self.parent.call_fault(5701, msg)
             return
 
         forwarder_info = None
@@ -127,27 +168,35 @@ class ATDirector(Director):
             forwarder_info = self.scoreboard.pop_forwarder_from_list()
 
             LOGGER.info(f"pairing with forwarder {forwarder_info.hostname}")
-            # record which forwarder we're paired to
-            self.scoreboard.set_paired_forwarder_info(forwarder_info)
         except Exception as e:
             msg = f"no forwarder on forwarder_list in redis db {self.redis_db} on {self.redis_host}"
             LOGGER.info(msg)
-            self.parent.fault(5701, msg)
+            self.parent.call_fault(5701, msg)
             return
+        try:
+            # record which forwarder we're paired to
+            self.beacon = Beacon(self.stop_forwarder_beacon_evt, self.scoreboard)
+            self.beacon_task = asyncio.create_task(self.beacon.ping(forwarder_info,
+                                                                    self.seconds_to_expire,
+                                                                    self.seconds_to_update))
+        except Exception as e:
+            print(e)
 
         await self.establish_connections(forwarder_info)
 
+        task = asyncio.create_task(self.send_association_message())
+        await task
+
     async def stop_services(self):
         if self.services_started_evt.is_set():
+            self.stop_forwarder_beacon_evt.set()
+            self.association_evt.clear()
             await self.rescind_connections()
             self.services_started_evt.clear()
 
     async def establish_connections(self, info):
         await self.setup_publishers()
         await self.setup_consumers()
-        self.forwarder_heartbeat_task = asyncio.create_task(self.emit_heartbeat(info.hostname, info.consume_queue,
-                                                                                'AT_FWDR_HEALTH_CHECK',
-                                                                                self.forwarder_heartbeat_evt))
 
         self.archive_heartbeat_task = asyncio.create_task(self.emit_heartbeat("at_archive_controller",
                                                                                "archive_ctrl_consume",
@@ -163,9 +212,7 @@ class ATDirector(Director):
 
     async def stop_heartbeats(self):
         LOGGER.info("stopping heartbeats")
-        beats = [self.forwarder_heartbeat_task, self.archive_heartbeat_task]
-        for beat in beats:
-            await self.stop_heartbeat_task(beat)
+        await self.stop_heartbeat_task(self.archive_heartbeat_task)
 
     async def stop_heartbeat_task(self, task):
         if task is not None:
@@ -240,14 +287,23 @@ class ATDirector(Director):
     def process_at_items_xferd_ack(self, msg):
         LOGGER.info("process_at_items_xferd: ack received")
 
-    def process_forwarder_health_check_ack(self, msg):
-        self.forwarder_heartbeat_evt.clear()
-
     def process_archiver_health_check_ack(self, msg):
         self.archive_heartbeat_evt.clear()
 
     async def publish_message(self, queue, msg):
         await self.publisher.publish_message(queue, msg)
+
+    async def send_association_message(self):
+        msg = {}
+        msg['MSG_TYPE'] = 'ASSOCIATED'
+        msg['ASSOCIATION_KEY'] = 'atarchiver_association'
+        await self.publish_message(self.forwarder_consume_queue, msg)
+
+        code = 5752
+        report = f"No association response from forwarder. Setting fault state with code = {code}"
+        waiter = Waiter(self.association_evt, self.parent, self.ack_timeout)
+        self.startIntegration_ack_task = asyncio.create_task(waiter.pause(code, report))
+        
 
     def send_telemetry(self, status_code, description):
         msg = {}
@@ -324,6 +380,10 @@ class ATDirector(Director):
         d['ACK_ID'] = 0
         d['REPLY_QUEUE'] = 'at_foreman_ack_publish'
         return d
+
+    def process_association_ack(self, data):
+        self.association_evt.clear()
+        LOGGER.info("association ack received")
 
     def process_new_at_item_ack(self, data):
         self.new_at_archive_item_evt.clear()
@@ -436,5 +496,5 @@ class ATDirector(Director):
         except Exception as e:
             LOGGER.info(f"failed to publish message to {queue}: "+str(e))
             await pub.stop()
-            self.parent.fault(code=5751, report=f"failed to publish message to {queue}")
+            self.parent.call_fault(code=5751, report=f"failed to publish message to {queue}")
             return
