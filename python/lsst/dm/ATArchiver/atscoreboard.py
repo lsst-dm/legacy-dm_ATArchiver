@@ -77,10 +77,9 @@ class ATScoreboard(Scoreboard):
             return None
 
     def check_forwarder_presence(self, forwarder_key):
-        return self.conn.get(self.device, forwarder_key)
+        return self.conn.get(forwarder_key)
 
     def set_forwarder_association(self, forwarder_hostname, timeout):
-        LOGGER.info(f'setting atarchiver_association = {forwarder_hostname}')
         self.conn.set("atarchiver_association", forwarder_hostname, timeout)
 
     def delete_forwarder_association(self):

@@ -56,7 +56,6 @@ class Beacon:
                 LOGGER.info(f"stopping beacon for {forwarder_info.hostname}")
                 self.scoreboard.delete_forwarder_association()
                 return
-            LOGGER.info(f"beacon setting {forwarder_info.hostname}")
             self.scoreboard.set_forwarder_association(forwarder_info.hostname,seconds_to_expire)
             await asyncio.sleep(seconds_to_update)
 
@@ -89,7 +88,7 @@ class ATDirector(Director):
                              'AT_FWDR_END_READOUT_ACK': self.process_at_fwdr_end_readout_ack,
                              'AT_FWDR_HEADER_READY_ACK': self.process_header_ready_ack,
                              'AT_ITEMS_XFERD_ACK': self.process_at_items_xferd_ack,
-                             'ASSOCIATION_ACK': self.process_association_ack,
+                             'ASSOCIATED_ACK': self.process_association_ack,
                              'NEW_AT_ARCHIVE_ITEM_ACK': self.process_new_at_item_ack}
 
         cdm = self.getConfiguration()
