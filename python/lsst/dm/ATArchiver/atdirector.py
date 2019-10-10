@@ -73,8 +73,7 @@ class Watcher:
                 return
             if self.scoreboard.check_forwarder_presence(forwarder_key) is None:
                 code = 5755
-                report = "Forwarder is does not appear to be alive.  Going into fault state"
-                LOGGER.info(report)
+                report = "Forwarder is does not appear to be alive.  Going into fault state."
                 self.parent.call_fault(code=code, report=report)
                 return
             await asyncio.sleep(seconds_until_next_peek)
@@ -140,6 +139,7 @@ class ATDirector(Director):
         self.services_started_evt = asyncio.Event()
 
         self.stop_forwarder_beacon_evt = asyncio.Event()
+        self.stop_watcher_evt = asyncio.Event()
 
         self.publisher = None
         self.archive_consumer = None
@@ -158,7 +158,6 @@ class ATDirector(Director):
         except Exception as e:
             LOGGER.info(e)
             msg = "could't establish connection with redis broker"
-            LOGGER.info(msg)
             self.parent.call_fault(5701, msg)
             return
 
@@ -169,7 +168,6 @@ class ATDirector(Director):
             LOGGER.info(f"pairing with forwarder {forwarder_info.hostname}")
         except Exception as e:
             msg = f"no forwarder on forwarder_list in redis db {self.redis_db} on {self.redis_host}"
-            LOGGER.info(msg)
             self.parent.call_fault(5701, msg)
             return
         try:
@@ -188,6 +186,7 @@ class ATDirector(Director):
 
     async def stop_services(self):
         if self.services_started_evt.is_set():
+            self.stop_watcher_evt.set()
             self.stop_forwarder_beacon_evt.set()
             self.association_evt.clear()
             await self.rescind_connections()
@@ -296,6 +295,7 @@ class ATDirector(Director):
         msg = {}
         msg['MSG_TYPE'] = 'ASSOCIATED'
         msg['ASSOCIATION_KEY'] = 'atarchiver_association'
+        msg['REPLY_QUEUE'] = 'at_foreman_ack_publish'
         await self.publish_message(self.forwarder_consume_queue, msg)
 
         code = 5752
@@ -383,6 +383,10 @@ class ATDirector(Director):
     def process_association_ack(self, data):
         self.association_evt.clear()
         LOGGER.info("association ack received")
+        
+        watcher = Watcher(self.stop_watcher_evt, self.parent, self.scoreboard)
+        watcher_task = asyncio.create_task(watcher.peek(data['ASSOCIATION_KEY'], self.seconds_to_expire))
+
 
     def process_new_at_item_ack(self, data):
         self.new_at_archive_item_evt.clear()
@@ -493,7 +497,6 @@ class ATDirector(Director):
         except asyncio.CancelledError:
             await pub.stop()
         except Exception as e:
-            LOGGER.info(f"failed to publish message to {queue}: "+str(e))
             await pub.stop()
             self.parent.call_fault(code=5751, report=f"failed to publish message to {queue}")
             return
