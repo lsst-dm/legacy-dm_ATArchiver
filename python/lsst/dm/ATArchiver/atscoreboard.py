@@ -64,6 +64,7 @@ class ATScoreboard(Scoreboard):
         d = json.loads(data)
         return self.create_forwarder(d)
 
+
     def create_forwarder(self, d):
         try:
             hostname = d['hostname']
@@ -75,7 +76,17 @@ class ATScoreboard(Scoreboard):
             LOGGER.info("Exception: "+str(e))
             return None
 
-    def set_paired_forwarder_info(self, forwarder_info):
+    def check_forwarder_presence(self, forwarder_key):
+        return self.conn.get(forwarder_key)
+
+    def set_forwarder_association(self, forwarder_hostname, timeout):
+        self.conn.set("atarchiver_association", forwarder_hostname, timeout)
+
+    def delete_forwarder_association(self):
+        LOGGER.info(f'deleting atarchiver_association')
+        self.conn.delete("atarchiver_association")
+
+    def set_paired_forwarder_info(self, forwarder_info, timeout):
         info = forwarder_info.__dict__
         data = json.dumps(info)
         self.conn.hset(self.device, self.PAIRED_FORWARDER, data)

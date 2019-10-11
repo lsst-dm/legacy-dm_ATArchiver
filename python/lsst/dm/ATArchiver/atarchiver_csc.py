@@ -55,6 +55,9 @@ class ATArchiverCSC(dm_csc):
 
         self.director = ATDirector(self, "L1SystemCfg.yaml", "ATArchiverCSC.log")
 
+        self.transitioning_to_fault_evt = asyncio.Event()
+        self.transitioning_to_fault_evt.clear()
+
         self.current_state = None
         LOGGER.info("************************ Starting ATArchiver ************************")
 
@@ -84,6 +87,7 @@ class ATArchiverCSC(dm_csc):
         # starting up, so don't do anything but set the current state to STANBY
         if (self.current_state is None) and (self.summary_state == State.STANDBY):
             self.current_state = State.STANDBY
+            self.transitioning_to_fault_evt.clear()
             return
 
         # if going from STANDBY to DISABLED, start external services
@@ -117,12 +121,13 @@ class ATArchiverCSC(dm_csc):
             self.current_state = State.FAULT
             return
 
-        # These are all place holders and only update state
-
         # if going from FAULT to STANDBY, services have already been stopped
         if (self.current_state == State.FAULT) and (self.summary_state == State.STANDBY):
             self.current_state = State.STANDBY
+            self.transitioning_to_fault_evt.clear()
             return
+
+        # These are all place holders and only update state
 
         # if going from DISABLED to ENABLED leave external services alone, but accept control commands
         if (self.current_state == State.DISABLED) and (self.summary_state == State.ENABLED):
@@ -133,6 +138,13 @@ class ATArchiverCSC(dm_csc):
         if (self.current_state == State.ENABLED) and (self.summary_state == State.DISABLED):
             self.current_state = State.DISABLED
             return
+
+    def call_fault(self, code, report):
+        if self.transitioning_to_fault_evt.is_set():
+            return
+        self.transitioning_to_fault_evt.set()
+        LOGGER.info(report)
+        self.fault(code, report)
 
     async def start_services(self):
         await self.director.start_services()
