@@ -6,7 +6,7 @@ import os.path
 import sys
 from lsst.dm.csc.base.consumer import Consumer
 from lsst.dm.csc.base.publisher import Publisher
-from lsst.ctrl.iip.base import base
+from lsst.dm.csc.base.base import base
 
 LOGGER = logging.getLogger(__name__)
 
