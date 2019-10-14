@@ -3,7 +3,7 @@ import os
 import time
 from lsst.dm.csc.base.consumer import Consumer
 from lsst.dm.csc.base.publisher import Publisher
-from lsst.ctrl.iip.base import base
+from lsst.dm.csc.base.base import base
 
 
 class FileNotifier(base):
