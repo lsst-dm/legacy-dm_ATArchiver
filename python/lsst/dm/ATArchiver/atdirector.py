@@ -364,10 +364,8 @@ class ATDirector(Director):
         d['IMAGE_ID'] = data.imageName
         d['ACK_ID'] = 0
         d['REPLY_QUEUE'] = 'at_foreman_ack_publish'
-        d['IMAGE_SEQUENCE_NAME'] = data.imageSequenceName
         d['IMAGES_IN_SEQUENCE'] = data.imagesInSequence
-        # uncomment this when the IDL is fixed
-        # d['IMAGE_INDEX'] = data.imageIndex
+        d['IMAGE_INDEX'] = data.imageIndex
         return d
 
     def build_largeFileObjectAvailable_message(self, data):
