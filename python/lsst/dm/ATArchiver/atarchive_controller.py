@@ -12,13 +12,13 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ATArchiveController(base):
-    def __init__(self, config_filename, log_filename):
-        super().__init__(config_filename, log_filename)
+    def __init__(self, name, config_filename, log_filename):
+        super().__init__(name, config_filename, log_filename)
 
     @classmethod
-    async def create(cls, config_filename, log_filename):
+    async def create(cls, name, config_filename, log_filename):
         
-        self = ATArchiveController(config_filename, log_filename)
+        self = ATArchiveController(name, config_filename, log_filename)
         self._msg_actions = {'ARCHIVE_HEALTH_CHECK': self.process_health_check,
                              'NEW_AT_ARCHIVE_ITEM': self.process_new_at_archive_item,
                              'FILE_TRANSFER_COMPLETED': self.process_file_transfer_completed}
@@ -90,7 +90,7 @@ class ATArchiveController(base):
 
     async def setup_publishers(self):
         LOGGER.info("Setting up ATArchiveController publisher")
-        self.publisher = Publisher(self.base_broker_url, csc_parent=None)
+        self.publisher = Publisher(self.base_broker_url, csc_parent=None,  logger_level=LOGGER.debug)
         await self.publisher.start()
 
     async def stop_publishers(self):
@@ -180,6 +180,7 @@ class ATArchiveController(base):
         ack_msg = self.build_new_item_ack_message(target_dir, msg)
 
         reply_queue = msg['REPLY_QUEUE']
+        LOGGER.info(ack_msg)
         await self.publisher.publish_message(reply_queue, ack_msg)
 
     def build_file_transfer_completed_ack(self, data):
@@ -196,6 +197,7 @@ class ATArchiveController(base):
         reply_queue = msg['REPLY_QUEUE']
         self.create_links_to_file(filename)
         ack_msg = self.build_file_transfer_completed_ack(msg)
+        LOGGER.info(ack_msg)
         await self.publisher.publish_message(reply_queue, ack_msg)
 
     async def process_file_transfer_completed_ack(self, msg):

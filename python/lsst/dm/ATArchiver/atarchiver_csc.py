@@ -53,7 +53,7 @@ class ATArchiverCSC(dm_csc):
                                         evt_max_history=0)
         self.efd_remote.evt_largeFileObjectAvailable.callback = self.largeFileObjectAvailableCallback
 
-        self.director = ATDirector(self, "L1SystemCfg.yaml", "ATArchiverCSC.log")
+        self.director = ATDirector(self, "DM_ATARCHIVER", "atarchiver_config.yaml", "ATArchiverCSC.log")
 
         self.transitioning_to_fault_evt = asyncio.Event()
         self.transitioning_to_fault_evt.clear()
