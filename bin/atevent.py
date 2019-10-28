@@ -8,31 +8,33 @@ class Commander:
 
     def emit_startIntegration(self, args):
         cam = salobj.Controller(name="ATCamera", index=0)
-        kwInt = {'imageSequenceName': str(args.imageSequenceName),
-                 'imagesInSequence': args.imagesInSequence,
+        kwInt = {'imagesInSequence': args.imagesInSequence,
                  'imageName': str(args.imageName),
-                 # 'imageIndex': args.imageIndex,
+                 'imageIndex': args.imageIndex,
                  'imageSource': str(args.imageSource),
                  'imageController': str(args.imageController),
                  'imageDate': str(args.imageDate),
                  'imageNumber': args.imageNumber,
                  'timeStampAcquisitionStart': args.timeStampAcquisitionStart,
                  'exposureTime': args.exposureTime,
+                 'imageType': args.imageType,
+                 'groupId': args.groupId,
                  'priority': 1}
         cam.evt_startIntegration.set_put(**kwInt)
 
     def emit_endReadout(self, args):
         cam = salobj.Controller(name="ATCamera", index=0)
-        kwInt = {'imageSequenceName': str(args.imageSequenceName),
-                 'imagesInSequence': args.imagesInSequence,
+        kwInt = {'imagesInSequence': args.imagesInSequence,
                  'imageName': str(args.imageName),
-                 # 'imageIndex': args.imageIndex,
+                 'imageIndex': args.imageIndex,
                  'imageSource': str(args.imageSource),
                  'imageController': str(args.imageController),
                  'imageDate': str(args.imageDate),
                  'imageNumber': args.imageNumber,
                  'timeStampAcquisitionStart': args.timeStampAcquisitionStart,
                  'exposureTime': args.exposureTime,
+                 'imageType': args.imageType,
+                 'groupId': args.groupId,
                  'priority': 1}
         cam.evt_endReadout.set_put(**kwInt)
 
@@ -56,10 +58,9 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers(dest="event")
 
     start_parser = subparsers.add_parser('startIntegration')
-    start_parser.add_argument('-q', '--imageSequenceName', dest='imageSequenceName', required=True)
     start_parser.add_argument('-s', '--imagesInSequence', dest='imagesInSequence', type=int, required=True)
     start_parser.add_argument('-n', '--imageName', dest='imageName', required=True)
-    start_parser.add_argument('-i', '--imageIndex', dest='imageIndex', required=True)
+    start_parser.add_argument('-i', '--imageIndex', dest='imageIndex', required=True, type=int)
 
     start_parser.add_argument('-S', '--imageSource', dest='imageSource', required=True)
     start_parser.add_argument('-c', '--imageController', dest='imageController', required=True)
@@ -69,12 +70,13 @@ if __name__ == "__main__":
     start_parser.add_argument('-T', '--timeStampAcquisitionStart', dest='timeStampAcquisitionStart',
                               type=float, required=True)
     start_parser.add_argument('-e', '--exposureTime', dest='exposureTime', type=float, required=True)
+    start_parser.add_argument('-p', '--imageType', dest='imageType', type=str, required=True)
+    start_parser.add_argument('-G', '--groupId', dest='groupId', type=str, required=True)
 
     end_parser = subparsers.add_parser('endReadout')
-    end_parser.add_argument('-q', '--imageSequenceName', dest='imageSequenceName', required=True)
     end_parser.add_argument('-s', '--imagesInSequence', dest='imagesInSequence', type=int, required=True)
     end_parser.add_argument('-n', '--imageName', dest='imageName', required=True)
-    end_parser.add_argument('-i', '--imageIndex', dest='imageIndex', required=True)
+    end_parser.add_argument('-i', '--imageIndex', dest='imageIndex', required=True, type=int)
 
     end_parser.add_argument('-S', '--imageSource', dest='imageSource', required=True)
     end_parser.add_argument('-c', '--imageController', dest='imageController', required=True)
@@ -84,6 +86,8 @@ if __name__ == "__main__":
     end_parser.add_argument('-T', '--timeStampAcquisitionStart', dest='timeStampAcquisitionStart',
                             type=float, required=True)
     end_parser.add_argument('-e', '--exposureTime', dest='exposureTime', type=float, required=True)
+    end_parser.add_argument('-p', '--imageType', dest='imageType', type=str, required=True)
+    end_parser.add_argument('-G', '--groupId', dest='groupId', type=str, required=True)
 
     large_parser = subparsers.add_parser('largeFileObjectAvailable')
     large_parser.add_argument('-b', '--byteSize', dest='byteSize', type=int, required=True)

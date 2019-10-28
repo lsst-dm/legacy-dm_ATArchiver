@@ -79,8 +79,8 @@ class Watcher:
 
 class ATDirector(Director):
 
-    def __init__(self, parent, config_filename, log_filename):
-        super().__init__(config_filename, log_filename)
+    def __init__(self, parent, name, config_filename, log_filename):
+        super().__init__(name, config_filename, log_filename)
         self.parent = parent
 
         self._msg_actions = {'ARCHIVE_HEALTH_CHECK_ACK': self.process_archiver_health_check_ack,
@@ -106,14 +106,12 @@ class ATDirector(Director):
         self.redis_host = root["REDIS_HOST"]
         self.redis_db = root["ATARCHIVER_REDIS_DB"]
 
-        self.forwarder_consume_queue = root["FORWARDER_CONSUME_QUEUE"]
         self.forwarder_publish_queue = root["FORWARDER_PUBLISH_QUEUE"]
-        self.forwarder_host = root["FORWARDER_HOST"]
+        self.forwarder_host = None
 
         archive = root['ARCHIVE']
-        self.archive_name = archive['ARCHIVE_LOGIN']
+        self.archive_login = archive['ARCHIVE_LOGIN']
         self.archive_ip = archive['ARCHIVE_IP']
-        self.archive_xfer_root = archive['ARCHIVE_XFER_ROOT']
 
         csc = root['CSC']
         beacon = csc['BEACON']
@@ -178,6 +176,8 @@ class ATDirector(Director):
         except Exception as e:
             print(e)
 
+        self.forwarder_host = forwarder_info.hostname
+        self.forwarder_consume_queue = forwarder_info.consume_queue
         await self.establish_connections(forwarder_info)
 
         task = asyncio.create_task(self.send_association_message())
@@ -247,7 +247,7 @@ class ATDirector(Director):
         self.archive_consumer.start()
 
         # ack messages from Forwarder & ArchiveController
-        self.forwarder_consumer = Consumer(self.base_broker_url,  self.parent, "at_foreman_ack_publish",
+        self.forwarder_consumer = Consumer(self.base_broker_url,  self.parent, self.forwarder_publish_queue,
                                            self.on_message)
         self.forwarder_consumer.start()
 
@@ -294,7 +294,7 @@ class ATDirector(Director):
         msg = {}
         msg['MSG_TYPE'] = 'ASSOCIATED'
         msg['ASSOCIATION_KEY'] = 'atarchiver_association'
-        msg['REPLY_QUEUE'] = 'at_foreman_ack_publish'
+        msg['REPLY_QUEUE'] = self.forwarder_publish_queue
         await self.publish_message(self.forwarder_consume_queue, msg)
 
         code = 5752
@@ -321,7 +321,7 @@ class ATDirector(Director):
         d['JOB_NUM'] = self.get_next_jobnum()
         d['SESSION_ID'] = self.get_session_id()
         d['IMAGE_ID'] = data.imageName
-        d['REPLY_QUEUE'] = 'at_foreman_ack_publish'
+        d['REPLY_QUEUE'] = self.forwarder_publish_queue
         return d
 
         d['imageName'] = data.imageName
@@ -343,9 +343,9 @@ class ATDirector(Director):
         d['DEVICE'] = 'AT'
         d['JOB_NUM'] = self.get_jobnum()
         d['ACK_ID'] = 0
-        d['REPLY_QUEUE'] = 'at_foreman_ack_publish'
+        d['REPLY_QUEUE'] = self.forwarder_publish_queue
         targetDir = data['TARGET_DIR']
-        location = f"{self.archive_name}@{self.archive_ip}:{targetDir}"
+        location = f"{self.archive_login}@{self.archive_ip}:{targetDir}"
         d['TARGET_LOCATION'] = location
 
         xfer_params = {}
@@ -363,7 +363,7 @@ class ATDirector(Director):
         d['SESSION_ID'] = self.get_session_id()
         d['IMAGE_ID'] = data.imageName
         d['ACK_ID'] = 0
-        d['REPLY_QUEUE'] = 'at_foreman_ack_publish'
+        d['REPLY_QUEUE'] = self.forwarder_publish_queue
         d['IMAGES_IN_SEQUENCE'] = data.imagesInSequence
         d['IMAGE_INDEX'] = data.imageIndex
         return d
@@ -374,7 +374,7 @@ class ATDirector(Director):
         d['FILENAME'] = data.url
         d['IMAGE_ID'] = data.id
         d['ACK_ID'] = 0
-        d['REPLY_QUEUE'] = 'at_foreman_ack_publish'
+        d['REPLY_QUEUE'] = self.forwarder_publish_queue
         return d
 
     def process_association_ack(self, data):
@@ -478,7 +478,7 @@ class ATDirector(Director):
                 msg = {"MSG_TYPE": msg_type,
                        "ACK_ID": 0,
                        "SESSION_ID": self.get_session_id(),
-                       "REPLY_QUEUE": "at_foreman_ack_publish"}
+                       "REPLY_QUEUE": self.forwarder_publish_queue}
                 LOGGER.debug(f"about to send {msg}")
                 await pub.publish_message(queue, msg)
 
