@@ -1,0 +1,7 @@
+[Unit]
+Description=ATArchiverCSC and ATArchiveController
+Requires=multi-user.target l1d-ctrl_dependency.target 
+Wants=l1d-ATArchiver.service l1d-ATArchiveController.service
+
+[Install]
+WantedBy=multi-user.target

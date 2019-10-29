@@ -1,0 +1,16 @@
+[Unit]
+Description=ATArchiveController Service
+Requires=l1d-ctrl_dependency.target
+BindsTo=l1d-atarchiver.target
+
+[Service]
+Type=simple
+User=ARC
+Environment="DM_ATARCHIVER_DIR=/opt/lsst/dm_ATArchiver"
+PassEnvironment=DM_ATARCHIVER_DIR
+WorkingDirectory=/opt/lsst/dm_ATArchiver
+ExecStart=/opt/lsst/dm_ATArchiver/bin/run_atarchive_controller.sh
+Restart=always
+
+[Install]
+WantedBy=l1d-atarchiver.target
