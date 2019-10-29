@@ -1,0 +1,25 @@
+# Configuration settings for ATArchiver
+ROOT:
+  REDIS_HOST: localhost
+  ATARCHIVER_REDIS_DB: 15
+  FORWARDER_PUBLISH_QUEUE: at_foreman_ack_publish
+  LOGGING_DIR: /var/log/iip
+
+  ACK_TIMEOUT: 5
+
+  CSC:
+    BEACON:
+        SECONDS_TO_EXPIRE: 10
+        SECONDS_TO_UPDATE: 3
+
+  BASE_BROKER_ADDR: 10.0.100.128:5672/%2ftest_at
+  ARCHIVE:
+    ARCHIVE_LOGIN: ARC
+    ARCHIVE_IP: 10.0.100.128
+    CHECKSUM_TYPE: MD5   # Current available options: MD5, CRC-32 
+    ATFORWARDER_STAGING: /data/staging/atforwarder
+    OODS_STAGING: /data/staging/oods
+    DBB_STAGING: /data/staging/dbb
+  ATS:
+    WFS_RAFT: "00"
+    WFS_CCD: [ "00" ]
