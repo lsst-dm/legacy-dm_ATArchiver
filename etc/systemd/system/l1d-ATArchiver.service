@@ -1,6 +1,5 @@
 [Unit]
 Description=ATArchiverCSC Service
-Requires=l1d-ctrl_dependency.target
 BindsTo=l1d-atarchiver.target
 
 [Service]
