@@ -16,8 +16,11 @@ export TS_SALOBJ_DIR=/opt/lsst/ts_salobj
 export PYTHONPATH=${TS_SALOBJ_DIR}/python:${PYTHONPATH}
 
 # setup ATArchiverCSC and ArchiveController
+
 export DM_ATARCHIVER_DIR=/opt/lsst/dm_ATArchiver
 export DM_CSC_BASE_DIR=/opt/lsst/dm_csc_base
+export DM_CONFIG_AT_DIR=/opt/lsst/dm_config_at
+
 export PYTHONPATH=${PYTHONPATH}:${DM_ATARCHIVER_DIR}/python:${DM_CSC_BASE_DIR}/python
 
 # setup path for commands
