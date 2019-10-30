@@ -1,6 +1,7 @@
 [Unit]
 Description=ATArchiverCSC Service
-BindsTo=at-archiver.target
+PartOf=at-archiver.service
+After=at-archiver.service
 
 [Service]
 Type=simple
@@ -12,4 +13,4 @@ ExecStart=/opt/lsst/dm_ATArchiver/bin/run_atarchiver.sh
 Restart=always
 
 [Install]
-WantedBy=at-archiver.target
+WantedBy=at-archiver.service

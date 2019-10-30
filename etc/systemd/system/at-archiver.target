@@ -1,7 +1,0 @@
-[Unit]
-Description=ATArchiverCSC and ATArchiveController services
-Requires=multi-user.target
-Wants=at-archivercsc.service at-archivecontroller.service
-
-[Install]
-WantedBy=multi-user.target

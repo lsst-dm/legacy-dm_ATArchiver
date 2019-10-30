@@ -1,0 +1,10 @@
+[Unit]
+Description=ATArchiver Services
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+RemainAfterExit=yes
+
+[Install]
+WantedBy=at-archiver.target
