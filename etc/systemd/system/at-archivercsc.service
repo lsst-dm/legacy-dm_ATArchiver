@@ -1,0 +1,16 @@
+[Unit]
+Description=ATArchiverCSC Service
+PartOf=at-archiver.service
+After=at-archiver.service
+
+[Service]
+Type=simple
+User=ARC
+Environment="DM_ATARCHIVER_DIR=/opt/lsst/dm_ATArchiver"
+PassEnvironment=DM_ATARCHIVER_DIR
+WorkingDirectory=/opt/lsst/dm_ATArchiver
+ExecStart=/opt/lsst/dm_ATArchiver/bin/run_atarchiver.sh
+Restart=always
+
+[Install]
+WantedBy=at-archiver.service
