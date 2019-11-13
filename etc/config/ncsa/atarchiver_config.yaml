@@ -3,7 +3,6 @@ ROOT:
   REDIS_HOST: localhost
   ATARCHIVER_REDIS_DB: 15
   FORWARDER_PUBLISH_QUEUE: at_foreman_ack_publish
-  LOGGING_DIR: /var/log/iip
 
   ACK_TIMEOUT: 5
 
