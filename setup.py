@@ -18,7 +18,7 @@ setup(
     install_requires=install_requires,
     package_dir={"": "python"},
     packages=find_namespace_packages(where="python"),
-    scripts=["bin/run_at_archiver_csc.py", "bin/run_atarchive_controller.py", "bin/run_atarchive_controller.sh", "bin/run_atarchiver.sh", "bin/setup_atarchiver.sh"],
+    scripts=["bin/run_at_archiver_csc.py", "bin/run_atarchive_controller.py", "bin/run_atarchive_controller.sh", "bin/run_atarchiver.sh" ],
     data_files=[(os.path.join(data_files_path, "schema"), ["schema/ATArchiver.yaml"])],
     include_package_data=True,
     zip_safe=False,
