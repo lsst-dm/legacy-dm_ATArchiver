@@ -199,7 +199,6 @@ class ATDirector(Director):
                                                                                "archive_ctrl_consume",
                                                                                "ARCHIVE_HEALTH_CHECK",
                                                                                self.archive_heartbeat_evt))
-
     async def rescind_connections(self):
         LOGGER.info("rescinding connections")
         await self.stop_heartbeats()
@@ -272,26 +271,29 @@ class ATDirector(Director):
             LOGGER.info(body)
         ch.basic_ack(method.delivery_tag)
         handler = self._msg_actions.get(body['MSG_TYPE'])
-        handler(body)
+        task = asyncio.create_task(handler(body))
+        
 
     def on_telemetry(self, ch, method, properties, body):
         task = asyncio.create_task(self.parent.send_processingStatus(body['STATUS_CODE'],body['DESCRIPTION']))
         ch.basic_ack(method.delivery_tag)
 
-    def process_ack(self, msg):
-        pass
-
-    def process_at_items_xferd_ack(self, msg):
+    async def process_at_items_xferd_ack(self, msg):
         LOGGER.info("process_at_items_xferd: ack received")
 
-    def process_archiver_health_check_ack(self, msg):
+    async def process_archiver_health_check_ack(self, msg):
+        #ack_id = msg["ACK_ID"]
+        #evt = await self.clear_event(ack_id)
         self.archive_heartbeat_evt.clear()
 
     async def publish_message(self, queue, msg):
         await self.publisher.publish_message(queue, msg)
 
     async def send_association_message(self):
+
+        ack_id = await self.get_next_ack_id()
         msg = {}
+        msg['ACK_ID'] = ack_id
         msg['MSG_TYPE'] = 'ASSOCIATED'
         msg['ASSOCIATION_KEY'] = 'atarchiver_association'
         msg['REPLY_QUEUE'] = self.forwarder_publish_queue
@@ -299,10 +301,11 @@ class ATDirector(Director):
 
         code = 5752
         report = f"No association response from forwarder. Setting fault state with code = {code}"
-        waiter = Waiter(self.association_evt, self.parent, self.ack_timeout)
+
+        evt = self.association_evt
+        waiter = Waiter(evt, self.parent, self.ack_timeout)
         self.startIntegration_ack_task = asyncio.create_task(waiter.pause(code, report))
         
-
     def send_telemetry(self, status_code, description):
         msg = {}
         msg['MSG_TYPE'] = 'TELEMETRY'
@@ -311,13 +314,13 @@ class ATDirector(Director):
         msg['DESCRIPTION'] = description
         self.publish_message(self.TELEMETRY_QUEUE, msg)
 
-    def build_archiver_message(self, data):
+    def build_archiver_message(self, ack_id, data):
         d = {}
         # these are the old names.  This will be removed when we can update the other
         # parts of the code that depend on these names.
 
         d['MSG_TYPE'] = 'NEW_AT_ARCHIVE_ITEM'
-        d['ACK_ID'] = 0
+        d['ACK_ID'] = ack_id
         d['JOB_NUM'] = self.get_next_jobnum()
         d['SESSION_ID'] = self.get_session_id()
         d['IMAGE_ID'] = data.imageName
@@ -335,14 +338,14 @@ class ATDirector(Director):
         d['priority'] = data.priority
         return d
 
-    def build_startIntegration_message(self, data):
+    def build_startIntegration_message(self, ack_id, data):
         d = {}
         d['MSG_TYPE'] = 'AT_FWDR_XFER_PARAMS'
         d['SESSION_ID'] = self.get_session_id()
         d['IMAGE_ID'] = data['IMAGE_ID']
         d['DEVICE'] = 'AT'
         d['JOB_NUM'] = self.get_jobnum()
-        d['ACK_ID'] = 0
+        d['ACK_ID'] = ack_id
         d['REPLY_QUEUE'] = self.forwarder_publish_queue
         targetDir = data['TARGET_DIR']
         location = f"{self.archive_login}@{self.archive_ip}:{targetDir}"
@@ -356,43 +359,53 @@ class ATDirector(Director):
         d['XFER_PARAMS'] = xfer_params
         return d
 
-    def build_endReadout_message(self, data):
+    def build_endReadout_message(self, ack_id, data):
         d = {}
         d['MSG_TYPE'] = 'AT_FWDR_END_READOUT'
         d['JOB_NUM'] = self.get_jobnum()
         d['SESSION_ID'] = self.get_session_id()
         d['IMAGE_ID'] = data.imageName
-        d['ACK_ID'] = 0
+        d['ACK_ID'] = ack_id
         d['REPLY_QUEUE'] = self.forwarder_publish_queue
         d['IMAGES_IN_SEQUENCE'] = data.imagesInSequence
         d['IMAGE_INDEX'] = data.imageIndex
         return d
 
-    def build_largeFileObjectAvailable_message(self, data):
+    def build_largeFileObjectAvailable_message(self, ack_id, data):
         d = {}
         d['MSG_TYPE'] = 'AT_FWDR_HEADER_READY'
         d['FILENAME'] = data.url
         d['IMAGE_ID'] = data.id
-        d['ACK_ID'] = 0
+        d['ACK_ID'] = ack_id
         d['REPLY_QUEUE'] = self.forwarder_publish_queue
         return d
 
-    def process_association_ack(self, data):
-        self.association_evt.clear()
-        LOGGER.info("association ack received")
+    async def process_association_ack(self, msg):
+        # TODO: this is temporary until the Forwarder returns ACK_ID; after that starts happening, this code can be removed
+        if "ACK_ID" in msg:
+            ack_id = msg["ACK_ID"]
+            LOGGER.info(f"association ack received {ack_id}")
+            evt = await self.clear_event(ack_id)
+            if evt is None:
+                LOGGER.info(f"Association ACK {ack_id} is unknown.  Ignored.")
+                return
+        else:
+            self.association_evt.clear()
         
         watcher = Watcher(self.stop_watcher_evt, self.parent, self.scoreboard)
-        watcher_task = asyncio.create_task(watcher.peek(data['ASSOCIATION_KEY'], self.seconds_to_expire))
+        watcher_task = asyncio.create_task(watcher.peek(msg['ASSOCIATION_KEY'], self.seconds_to_expire))
 
 
-    def process_new_at_item_ack(self, data):
-        self.new_at_archive_item_evt.clear()
-        LOGGER.info(f"{data}")
+    async def process_new_at_item_ack(self, msg):
+        ack_id = msg["ACK_ID"]
+        evt = await self.clear_event(ack_id)
+        LOGGER.info(f"{msg}")
         # this is scheduled, since process_new_at_item_ack is never await-ed
-        task = asyncio.create_task(self.send_startIntegration(data))
+        task = asyncio.create_task(self.send_startIntegration(msg))
 
     async def send_startIntegration(self, data):
-        msg = self.build_startIntegration_message(data)
+        ack_id = await self.get_next_ack_id()
+        msg = self.build_startIntegration_message(ack_id, data)
 
         await self.publish_message(self.forwarder_consume_queue, msg)
         LOGGER.info("startIntegration sent to forwarder")
@@ -400,16 +413,19 @@ class ATDirector(Director):
         code = 5752
         report = f"No xfer_params response from forwarder. Setting fault state with code = {code}"
 
-        waiter2 = Waiter(self.startIntegration_evt, self.parent, self.ack_timeout)
-        self.startIntegration_ack_task = asyncio.create_task(waiter2.pause(code, report))
+        evt = await self.create_event(ack_id)
+        waiter = Waiter(evt, self.parent, self.ack_timeout)
+        task = asyncio.create_task(waiter.pause(code, report))
 
     #
     # startIntegration
     #
     async def transmit_startIntegration(self, data):
 
+        ack_id = await self.get_next_ack_id()
+
         # first we send a message to the archiver, to obtain the correct target directory
-        msg = self.build_archiver_message(data)
+        msg = self.build_archiver_message(ack_id, data)
 
         await self.publish_message("archive_ctrl_consume", msg)
 
@@ -420,11 +436,14 @@ class ATDirector(Director):
         # frame allotted, a fault is thrown.  Otherwise, when the ack message is received,
         # the data is extracted within the "process_new_at_item_ack" method, and the
         # "startIntegration" message is build and sent to the forwarder from that method
-        waiter1 = Waiter(self.new_at_archive_item_evt, self.parent, self.ack_timeout)
-        self.new_at_archive_item_ack_task = asyncio.create_task(waiter1.pause(code, report))
 
-    def process_xfer_params_ack(self, msg):
-        self.startIntegration_evt.clear()
+        evt = await self.create_event(ack_id)
+        waiter = Waiter(evt, self.parent, self.ack_timeout)
+        task = asyncio.create_task(waiter.pause(code, report))
+
+    async def process_xfer_params_ack(self, msg):
+        ack_id = msg["ACK_ID"]
+        evt = await self.clear_event(ack_id)
         LOGGER.info("startIntegration ack received")
         pass
 
@@ -432,17 +451,21 @@ class ATDirector(Director):
     # endReadout
     #
     async def transmit_endReadout(self, data):
-        msg = self.build_endReadout_message(data)
+        ack_id = await self.get_next_ack_id()
+
+        msg = self.build_endReadout_message(ack_id, data)
         await self.publish_message(self.forwarder_consume_queue, msg)
 
         code = 5753
         report = f"No endReadout ack from forwarder. Setting fault state with code = {code}"
 
-        waiter = Waiter(self.endReadout_evt, self.parent, self.ack_timeout)
-        self.endReadout_ack_task = asyncio.create_task(waiter.pause(code, report))
+        evt = await self.create_event(ack_id)
+        waiter = Waiter(evt, self.parent, self.ack_timeout)
+        task = asyncio.create_task(waiter.pause(code, report))
 
-    def process_at_fwdr_end_readout_ack(self, msg):
-        self.endReadout_evt.clear()
+    async def process_at_fwdr_end_readout_ack(self, msg):
+        ack_id = msg["ACK_ID"]
+        evt = await self.clear_event(ack_id)
         LOGGER.info("endReadout ack received")
         pass
 
@@ -450,17 +473,20 @@ class ATDirector(Director):
     # largeFileObjectAvailable
     #
     async def transmit_largeFileObjectAvailable(self, data):
-        msg = self.build_largeFileObjectAvailable_message(data)
+        ack_id = await self.get_next_ack_id()
+        msg = self.build_largeFileObjectAvailable_message(ack_id, data)
         await self.publish_message(self.forwarder_consume_queue, msg)
 
         code = 5754
         report = f"No largeFileObjectAvailable ack from forwarder. Setting fault state with code = {code}"
 
-        waiter = Waiter(self.largeFileObjectAvailable_evt, self.parent, self.ack_timeout)
-        self.largeFileObjectAvailable_ack_task = asyncio.create_task(waiter.pause(code, report))
+        evt = await self.create_event(ack_id)
+        waiter = Waiter(evt, self.parent, self.ack_timeout)
+        task = asyncio.create_task(waiter.pause(code, report))
 
-    def process_header_ready_ack(self, msg):
-        self.largeFileObjectAvailable_evt.clear()
+    async def process_header_ready_ack(self, msg):
+        ack_id = msg["ACK_ID"]
+        evt = await self.clear_event(ack_id)
         LOGGER.info("largeFileObjectAvailable ack received")
         pass
 
@@ -475,8 +501,9 @@ class ATDirector(Director):
             await pub.start()
 
             while True:
+                ack_id = await self.get_next_ack_id()
                 msg = {"MSG_TYPE": msg_type,
-                       "ACK_ID": 0,
+                       "ACK_ID": ack_id,
                        "SESSION_ID": self.get_session_id(),
                        "REPLY_QUEUE": self.forwarder_publish_queue}
                 LOGGER.debug(f"about to send {msg}")
