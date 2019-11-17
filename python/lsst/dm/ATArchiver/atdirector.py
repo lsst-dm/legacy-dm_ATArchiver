@@ -78,7 +78,8 @@ class Watcher:
             await asyncio.sleep(seconds_until_next_peek)
 
 class ATDirector(Director):
-
+    """ Specialization of Director to handle non-CSC messaging and transactions
+    """
     def __init__(self, parent, name, config_filename, log_filename):
         super().__init__(name, config_filename, log_filename)
         self.parent = parent
@@ -146,6 +147,8 @@ class ATDirector(Director):
         self.scoreboard = None
 
     async def start_services(self):
+        """ called when CSC start commmand is made to start beacons, scoreboard and other services
+        """
         # this is the beginning of the start command, when we're about to go into disabled state
         LOGGER.info("start_services called")
 
@@ -184,6 +187,8 @@ class ATDirector(Director):
         await task
 
     async def stop_services(self):
+        """ Stop all non-CSC commmunication
+        """
         if self.services_started_evt.is_set():
             self.stop_watcher_evt.set()
             self.stop_forwarder_beacon_evt.set()
@@ -192,6 +197,8 @@ class ATDirector(Director):
             self.services_started_evt.clear()
 
     async def establish_connections(self, info):
+        """ Establish non-CSC messaging connections
+        """
         await self.setup_publishers()
         await self.setup_consumers()
 
@@ -200,6 +207,8 @@ class ATDirector(Director):
                                                                                "ARCHIVE_HEALTH_CHECK",
                                                                                self.archive_heartbeat_evt))
     async def rescind_connections(self):
+        """ Stop non-CSC messaging connections
+        """
         LOGGER.info("rescinding connections")
         await self.stop_heartbeats()
         await self.stop_publishers()
@@ -207,10 +216,15 @@ class ATDirector(Director):
         LOGGER.info("all connections rescinded")
 
     async def stop_heartbeats(self):
+        """ Stop all heartbeat tasks
+        """
         LOGGER.info("stopping heartbeats")
         await self.stop_heartbeat_task(self.archive_heartbeat_task)
 
     async def stop_heartbeat_task(self, task):
+        """ Stop a specific heartbeat task
+        @param task: the task to stop
+        """
         if task is not None:
             task.cancel()
             await task
@@ -228,6 +242,8 @@ class ATDirector(Director):
         await self.publisher.start()
 
     async def stop_publishers(self):
+        """ Stop all publisher connections
+        """
         LOGGER.info("stopping publishers")
         if self.publisher is not None:
             await self.publisher.stop()
@@ -256,6 +272,8 @@ class ATDirector(Director):
         self.telemetry_consumer.start()
 
     async def stop_consumers(self):
+        """ Stop all consumer connections
+        """
         LOGGER.info("stopping consumers")
         if self.archive_consumer is not None:
             self.archive_consumer.stop()
@@ -265,6 +283,8 @@ class ATDirector(Director):
             self.telemetry_consumer.stop()
 
     def on_message(self, ch, method, properties, body):
+        """ Route the message to the proper handler
+        """
         msg_type = body['MSG_TYPE']
         if (msg_type != 'AT_FWDR_HEALTH_CHECK_ACK') and (msg_type != 'ARCHIVE_HEALTH_CHECK_ACK'):
             LOGGER.info("received message")
@@ -275,22 +295,33 @@ class ATDirector(Director):
         
 
     def on_telemetry(self, ch, method, properties, body):
+        """ Called when telemetry is received.  This calls parent CSC object to emit the telemetry as a SAL message
+        """
         task = asyncio.create_task(self.parent.send_processingStatus(body['STATUS_CODE'],body['DESCRIPTION']))
         ch.basic_ack(method.delivery_tag)
 
     async def process_at_items_xferd_ack(self, msg):
+        """ Handle at_items_xferd_ack message
+        @param msg: contents of at_items_xferd_ack message
+        """
         LOGGER.info("process_at_items_xferd: ack received")
 
     async def process_archiver_health_check_ack(self, msg):
-        #ack_id = msg["ACK_ID"]
-        #evt = await self.clear_event(ack_id)
+        """ Handle archiver_health_check_ack message
+        @param msg: contents of archiver_health_check_ack message
+        """
         self.archive_heartbeat_evt.clear()
 
     async def publish_message(self, queue, msg):
+        """ publish message
+        @param queue: queue to write to
+        @param msg: dict containing message contents
+        """
         await self.publisher.publish_message(queue, msg)
 
     async def send_association_message(self):
-
+        """ send an association message to inform the forwarder it has been picked
+        """
         ack_id = await self.get_next_ack_id()
         msg = {}
         msg['ACK_ID'] = ack_id
@@ -307,6 +338,10 @@ class ATDirector(Director):
         self.startIntegration_ack_task = asyncio.create_task(waiter.pause(code, report))
         
     def send_telemetry(self, status_code, description):
+        """ send telemetry
+        @param status_code: message code
+        @param description: message contents
+        """
         msg = {}
         msg['MSG_TYPE'] = 'TELEMETRY'
         msg['DEVICE'] = self.DEVICE
@@ -315,6 +350,10 @@ class ATDirector(Director):
         self.publish_message(self.TELEMETRY_QUEUE, msg)
 
     def build_archiver_message(self, ack_id, data):
+        """ build a NEW_AT_ARCHIVE_ITEM message to send to the archiver
+        @param ack_id: acknowledgment id to send
+        @param data: CSC message contents to be used to send
+        """
         d = {}
         # these are the old names.  This will be removed when we can update the other
         # parts of the code that depend on these names.
@@ -339,6 +378,10 @@ class ATDirector(Director):
         return d
 
     def build_startIntegration_message(self, ack_id, data):
+        """ build a startIntegration message to send to the Forwarder
+        @param ack_id: acknowledgment id to send
+        @param data: CSC message contents to be used to send
+        """
         d = {}
         d['MSG_TYPE'] = 'AT_FWDR_XFER_PARAMS'
         d['SESSION_ID'] = self.get_session_id()
@@ -360,6 +403,10 @@ class ATDirector(Director):
         return d
 
     def build_endReadout_message(self, ack_id, data):
+        """ build an endReadout message to send to the Forwarder
+        @param ack_id: acknowledgment id to send
+        @param data: CSC message contents to be used to send
+        """
         d = {}
         d['MSG_TYPE'] = 'AT_FWDR_END_READOUT'
         d['JOB_NUM'] = self.get_jobnum()
@@ -372,6 +419,10 @@ class ATDirector(Director):
         return d
 
     def build_largeFileObjectAvailable_message(self, ack_id, data):
+        """ build a largeFileObjectAvailable message to send to the Forwarder
+        @param ack_id: acknowledgment id to send
+        @param data: CSC message contents to be used to send
+        """
         d = {}
         d['MSG_TYPE'] = 'AT_FWDR_HEADER_READY'
         d['FILENAME'] = data.url
@@ -381,6 +432,9 @@ class ATDirector(Director):
         return d
 
     async def process_association_ack(self, msg):
+        """ Handle incoming association_ack message
+        @param msg: contents of association ack
+        """
         # TODO: this is temporary until the Forwarder returns ACK_ID; after that starts happening, this code can be removed
         if "ACK_ID" in msg:
             ack_id = msg["ACK_ID"]
@@ -397,6 +451,9 @@ class ATDirector(Director):
 
 
     async def process_new_at_item_ack(self, msg):
+        """ Handle incoming new_at_item_ack message
+        @param msg: contents of new_at_item_ack
+        """
         ack_id = msg["ACK_ID"]
         evt = await self.clear_event(ack_id)
         LOGGER.info(f"{msg}")
@@ -404,6 +461,9 @@ class ATDirector(Director):
         task = asyncio.create_task(self.send_startIntegration(msg))
 
     async def send_startIntegration(self, data):
+        """ send the startIntegration message
+        @param data: contents of CSC startIntegration message
+        """
         ack_id = await self.get_next_ack_id()
         msg = self.build_startIntegration_message(ack_id, data)
 
@@ -413,6 +473,7 @@ class ATDirector(Director):
         code = 5752
         report = f"No xfer_params response from forwarder. Setting fault state with code = {code}"
 
+        # creates a timer waiting for an acknowledgement
         evt = await self.create_event(ack_id)
         waiter = Waiter(evt, self.parent, self.ack_timeout)
         task = asyncio.create_task(waiter.pause(code, report))
@@ -421,7 +482,9 @@ class ATDirector(Director):
     # startIntegration
     #
     async def transmit_startIntegration(self, data):
-
+        """transmit startIntegration to the forwarder
+        @param data: the contents of the startIntegration CSC message
+        """
         ack_id = await self.get_next_ack_id()
 
         # first we send a message to the archiver, to obtain the correct target directory
@@ -442,6 +505,8 @@ class ATDirector(Director):
         task = asyncio.create_task(waiter.pause(code, report))
 
     async def process_xfer_params_ack(self, msg):
+        """ Handle xfer_params_ack message
+        """
         ack_id = msg["ACK_ID"]
         evt = await self.clear_event(ack_id)
         LOGGER.info("startIntegration ack received")
@@ -451,6 +516,9 @@ class ATDirector(Director):
     # endReadout
     #
     async def transmit_endReadout(self, data):
+        """transmit endReadout to the forwarder
+        @param data: the contents of the endReadout CSC message
+        """
         ack_id = await self.get_next_ack_id()
 
         msg = self.build_endReadout_message(ack_id, data)
@@ -464,6 +532,8 @@ class ATDirector(Director):
         task = asyncio.create_task(waiter.pause(code, report))
 
     async def process_at_fwdr_end_readout_ack(self, msg):
+        """ Handle at_fwder_end_readout_ack message
+        """
         ack_id = msg["ACK_ID"]
         evt = await self.clear_event(ack_id)
         LOGGER.info("endReadout ack received")
@@ -473,6 +543,9 @@ class ATDirector(Director):
     # largeFileObjectAvailable
     #
     async def transmit_largeFileObjectAvailable(self, data):
+        """transmit largeFileObjectAvailable to the forwarder
+        @param data: the contents of the largeFileObjectAvailable CSC message
+        """
         ack_id = await self.get_next_ack_id()
         msg = self.build_largeFileObjectAvailable_message(ack_id, data)
         await self.publish_message(self.forwarder_consume_queue, msg)
@@ -485,6 +558,8 @@ class ATDirector(Director):
         task = asyncio.create_task(waiter.pause(code, report))
 
     async def process_header_ready_ack(self, msg):
+        """ Handle header_ready_ack message
+        """
         ack_id = msg["ACK_ID"]
         evt = await self.clear_event(ack_id)
         LOGGER.info("largeFileObjectAvailable ack received")
