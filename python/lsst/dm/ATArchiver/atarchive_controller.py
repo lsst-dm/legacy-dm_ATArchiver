@@ -219,7 +219,7 @@ class ATArchiveController(base):
             os.link(filename, new_file)
             LOGGER.info(f"created link to {new_file}")
         except Exception as e:
-            LOGGER.info(f'{e.message}')
+            LOGGER.info(f'{e}')
             return False
         return True
 
