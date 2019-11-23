@@ -333,7 +333,7 @@ class ATDirector(Director):
         code = 5752
         report = f"No association response from forwarder. Setting fault state with code = {code}"
 
-        evt = self.association_evt
+        evt = await self.create_event(ack_id)
         waiter = Waiter(evt, self.parent, self.ack_timeout)
         self.startIntegration_ack_task = asyncio.create_task(waiter.pause(code, report))
         
@@ -444,7 +444,8 @@ class ATDirector(Director):
                 LOGGER.info(f"Association ACK {ack_id} is unknown.  Ignored.")
                 return
         else:
-            self.association_evt.clear()
+            LOGGER.info("Missing ACK_ID in association message.")
+            return
         
         watcher = Watcher(self.stop_watcher_evt, self.parent, self.scoreboard)
         watcher_task = asyncio.create_task(watcher.peek(msg['ASSOCIATION_KEY'], self.seconds_to_expire))
