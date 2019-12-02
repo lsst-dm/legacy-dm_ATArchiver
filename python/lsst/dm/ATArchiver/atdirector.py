@@ -125,8 +125,6 @@ class ATDirector(Director):
 
         self.archive_heartbeat_task = None
 
-        self.association_evt = asyncio.Event()
-
         self.startIntegration_evt = asyncio.Event()
         self.new_at_archive_item_evt = asyncio.Event()
         self.endReadout_evt = asyncio.Event()
@@ -192,7 +190,6 @@ class ATDirector(Director):
         if self.services_started_evt.is_set():
             self.stop_watcher_evt.set()
             self.stop_forwarder_beacon_evt.set()
-            self.association_evt.clear()
             await self.rescind_connections()
             self.services_started_evt.clear()
 
