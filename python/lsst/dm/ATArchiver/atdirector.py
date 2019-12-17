@@ -24,7 +24,6 @@ import logging
 import traceback
 from lsst.dm.csc.base.publisher import Publisher
 from lsst.dm.csc.base.consumer import Consumer
-
 from lsst.dm.csc.base.director import Director
 from lsst.dm.ATArchiver.atscoreboard import ATScoreboard
 
@@ -84,7 +83,8 @@ class ATDirector(Director):
         super().__init__(name, config_filename, log_filename)
         self.parent = parent
 
-        self._msg_actions = {'ARCHIVE_HEALTH_CHECK_ACK': self.process_archiver_health_check_ack,
+        self._msg_actions = {'FILE_INGESTED_BY_OODS': self.process_file_ingested_by_oods,
+                             'ARCHIVE_HEALTH_CHECK_ACK': self.process_archiver_health_check_ack,
                              'AT_FWDR_XFER_PARAMS_ACK': self.process_xfer_params_ack,
                              'AT_FWDR_END_READOUT_ACK': self.process_at_fwdr_end_readout_ack,
                              'AT_FWDR_HEADER_READY_ACK': self.process_header_ready_ack,
@@ -138,6 +138,7 @@ class ATDirector(Director):
         self.stop_watcher_evt = asyncio.Event()
 
         self.publisher = None
+        self.oods_consumer = None
         self.archive_consumer = None
         self.forwarder_consumer = None
         self.telemetry_consumer = None
@@ -155,7 +156,7 @@ class ATDirector(Director):
             self.scoreboard = ATScoreboard(db=self.redis_db, host=self.redis_host)
         except Exception as e:
             LOGGER.info(e)
-            msg = "could't establish connection with redis broker"
+            msg = "atscoreboard could't establish connection with redis broker"
             self.parent.call_fault(5701, msg)
             return
 
@@ -252,6 +253,9 @@ class ATDirector(Director):
 
             :return: None.
         """
+        # message from OODS
+        self.oods_consumer = Consumer(self.base_broker_url, self.parent, "oods_publish_to_at", self.on_message)
+        self.oods_consumer.start()
 
         # messages from ArchiverController
         self.archive_consumer = Consumer(self.base_broker_url, self.parent, "archive_ctrl_publish",
@@ -278,6 +282,8 @@ class ATDirector(Director):
             self.forwarder_consumer.stop()
         if self.telemetry_consumer is not None:
             self.telemetry_consumer.stop()
+        if self.oods_consumer is not None:
+            self.oods_consumer.stop()
 
     def on_message(self, ch, method, properties, body):
         """ Route the message to the proper handler
@@ -289,13 +295,22 @@ class ATDirector(Director):
         ch.basic_ack(method.delivery_tag)
         handler = self._msg_actions.get(body['MSG_TYPE'])
         task = asyncio.create_task(handler(body))
-        
 
     def on_telemetry(self, ch, method, properties, body):
         """ Called when telemetry is received.  This calls parent CSC object to emit the telemetry as a SAL message
         """
-        task = asyncio.create_task(self.parent.send_processingStatus(body['STATUS_CODE'],body['DESCRIPTION']))
+        task = asyncio.create_task(self.parent.send_imageRetrievalForArchiving("LATISS", body['OBSID'], 'ATArchiver'))
         ch.basic_ack(method.delivery_tag)
+
+    async def process_file_ingested_by_oods(self, msg):
+        """ Handle file_ingested_by_oods message
+        @param msg: contents of file_ingested_by_oods message
+        """
+        LOGGER.info("file_ingested_by_oods: msg received")
+        camera = msg['CAMERA']
+        obsid = msg['OBSID']
+        archiver = msg['ARCHIVER']
+        task = asyncio.create_task(self.parent.send_imageInOODS(camera, obsid, archiver))
 
     async def process_at_items_xferd_ack(self, msg):
         """ Handle at_items_xferd_ack message
@@ -351,9 +366,8 @@ class ATDirector(Director):
         @param ack_id: acknowledgment id to send
         @param data: CSC message contents to be used to send
         """
+        LOGGER.info(f'data = {data}')
         d = {}
-        # these are the old names.  This will be removed when we can update the other
-        # parts of the code that depend on these names.
 
         d['MSG_TYPE'] = 'NEW_AT_ARCHIVE_ITEM'
         d['ACK_ID'] = ack_id
@@ -361,17 +375,13 @@ class ATDirector(Director):
         d['SESSION_ID'] = self.get_session_id()
         d['IMAGE_ID'] = data.imageName
         d['REPLY_QUEUE'] = self.forwarder_publish_queue
-        return d
 
         d['imageName'] = data.imageName
-        # The container containing this XML imageIndex in ATCamera_Events.xml.
-        # It's in the newer version of the XML
-        # d['imageIndex'] = data.imageIndex
-        d['imageSequenceName'] = data.imageSequenceName
+        d['imageIndex'] = data.imageIndex
+        #d['imageSequenceName'] = data.imageSequenceName
         d['imagesInSequence'] = data.imagesInSequence
-        # d['timeStamp'] = data.timeStamp
+        d['imageDate'] = data.imageDate
         d['exposureTime'] = data.exposureTime
-        d['priority'] = data.priority
         return d
 
     def build_startIntegration_message(self, ack_id, data):

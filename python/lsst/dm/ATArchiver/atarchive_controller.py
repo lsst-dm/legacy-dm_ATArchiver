@@ -4,6 +4,7 @@ import logging
 import os
 import os.path
 import sys
+from lsst.dm.csc.base.fileboard import Fileboard
 from lsst.dm.csc.base.consumer import Consumer
 from lsst.dm.csc.base.publisher import Publisher
 from lsst.dm.csc.base.base import base
@@ -25,6 +26,8 @@ class ATArchiveController(base):
 
         cdm = self.getConfiguration()
         root = cdm['ROOT']
+        redis_host = root['REDIS_HOST']
+        redis_db = root['ATARCHIVER_REDIS_DB']
         archive = root['ARCHIVE']
 
         if 'ATFORWARDER_STAGING' in archive:
@@ -76,6 +79,8 @@ class ATArchiveController(base):
         url = f"amqp://{service_user}:{service_passwd}@{self.base_broker_addr}"
 
         self.base_broker_url = url
+
+        self.fileboard = Fileboard(redis_db, redis_host)
 
         dir_list = [self.atforwarder_staging_dir, self.oods_staging_dir, self.dbb_staging_dir]
         self.create_directories(dir_list)
@@ -187,6 +192,7 @@ class ATArchiveController(base):
         d = {}
         d['MSG_TYPE'] = 'FILE_TRANSFER_COMPLETED_ACK'
         d['COMPONENT'] = 'ARCHIVE_CTRL'
+        d['IMAGE_NAME'] = data['IMAGE_NAME']
         d['FILENAME'] = data['FILENAME']
         d['JOB_NUM'] = data['JOB_NUM']
         d['SESSION_ID'] = data['SESSION_ID']
@@ -195,10 +201,26 @@ class ATArchiveController(base):
     async def process_file_transfer_completed(self, msg):
         filename = msg['FILENAME']
         reply_queue = msg['REPLY_QUEUE']
-        self.create_links_to_file(filename)
-        ack_msg = self.build_file_transfer_completed_ack(msg)
-        LOGGER.info(ack_msg)
-        await self.publisher.publish_message(reply_queue, ack_msg)
+        if self.create_links_to_file(filename) is True:
+            obsid = msg['OBSID']
+            ack_msg = self.build_file_transfer_completed_ack(msg)
+            LOGGER.info(ack_msg)
+            await self.publisher.publish_message(reply_queue, ack_msg)
+
+            oods_msg = self.build_oods_msg(obsid, filename)
+            await self.publisher.publish_message("at_publish_to_oods", oods_msg)
+            LOGGER.info(f"message published to oods:  {oods_msg}")
+        else:
+            LOGGER.info("couldn't create links to file; not sending message to OODS")
+
+    def build_oods_msg(self, obsid, filename):
+        d = {}
+        d['MSG_TYPE'] = 'AT_FILE_INGEST_REQUEST'
+        d['CAMERA'] = 'LATISS'
+        d['ARCHIVER'] = 'ATARCHIVER'
+        d['OBSID'] = obsid
+        d['FILENAME'] = filename
+        return d
 
     async def process_file_transfer_completed_ack(self, msg):
         LOGGER.info(f'ack received: {msg}')
@@ -236,3 +258,5 @@ class ATArchiveController(base):
             # remove the original file, since we've linked it
             LOGGER.info(f"link was created successfully; removing {forwarder_filename}")
             os.unlink(forwarder_filename)
+
+        return linked

@@ -4,7 +4,7 @@ ROOT:
   ATARCHIVER_REDIS_DB: 15
   FORWARDER_PUBLISH_QUEUE: at_foreman_ack_publish
 
-  ACK_TIMEOUT: 5
+  ACK_TIMEOUT: 10
 
   CSC:
     BEACON:
