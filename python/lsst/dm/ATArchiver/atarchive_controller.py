@@ -202,25 +202,9 @@ class ATArchiveController(base):
         filename = msg['FILENAME']
         reply_queue = msg['REPLY_QUEUE']
         if self.create_links_to_file(filename) is True:
-            obsid = msg['OBSID']
             ack_msg = self.build_file_transfer_completed_ack(msg)
             LOGGER.info(ack_msg)
             await self.publisher.publish_message(reply_queue, ack_msg)
-
-            oods_msg = self.build_oods_msg(obsid, filename)
-            await self.publisher.publish_message("at_publish_to_oods", oods_msg)
-            LOGGER.info(f"message published to oods:  {oods_msg}")
-        else:
-            LOGGER.info("couldn't create links to file; not sending message to OODS")
-
-    def build_oods_msg(self, obsid, filename):
-        d = {}
-        d['MSG_TYPE'] = 'AT_FILE_INGEST_REQUEST'
-        d['CAMERA'] = 'LATISS'
-        d['ARCHIVER'] = 'ATARCHIVER'
-        d['OBSID'] = obsid
-        d['FILENAME'] = filename
-        return d
 
     async def process_file_transfer_completed_ack(self, msg):
         LOGGER.info(f'ack received: {msg}')

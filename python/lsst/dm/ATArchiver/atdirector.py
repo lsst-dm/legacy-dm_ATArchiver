@@ -301,6 +301,20 @@ class ATDirector(Director):
         """
         task = asyncio.create_task(self.parent.send_imageRetrievalForArchiving("LATISS", body['OBSID'], 'ATArchiver'))
         ch.basic_ack(method.delivery_tag)
+        task2 = asyncio.create_task(self.send_ingest_messages_to_oods(body))
+
+    async def send_ingest_message_to_oods(self, body):
+        msg = self.build_file_ingest_request_message(body)
+        await self.publisher.publish_message('at_publish_to_oods', msg)
+
+    def build_file_ingest_request_message(self, msg):
+        d = {}
+        d['MSG_TYPE'] = 'AT_FILE_INGEST_REQUEST'
+        d['CAMERA'] = 'LATISS'
+        d['ARCHIVER'] = 'AT'
+        d['OBSID'] = msg['OBSID']
+        d['FILENAME'] = msg['FILENAME']
+        return d
 
     async def process_file_ingested_by_oods(self, msg):
         """ Handle file_ingested_by_oods message
