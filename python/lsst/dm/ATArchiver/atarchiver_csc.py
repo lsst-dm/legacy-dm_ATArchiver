@@ -66,7 +66,7 @@ class ATArchiverCSC(dm_csc):
         self.evt_imageRetrievalForArchiving.set_put(camera=camera, obsid=obsid, archiverName=archiverName)
 
     async def send_imageInOODS(self, camera, obsid, archiverName, statusCode, description):
-        LOGGER.info(f"sending {image_name}: {description}")
+        LOGGER.info(f"sending {camera} {obsid} {archiverName} {statusCode}: {description}")
         self.evt_imageInOODS.set_put(camera=camera, obsid=obsid, archiverName=archiverName, statusCode=statusCode, description=description)
 
     def report_summary_state(self):

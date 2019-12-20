@@ -293,8 +293,11 @@ class ATDirector(Director):
             LOGGER.info("received message")
             LOGGER.info(body)
         ch.basic_ack(method.delivery_tag)
-        handler = self._msg_actions.get(body['MSG_TYPE'])
-        task = asyncio.create_task(handler(body))
+        if msg_type in self._msg_actions:
+            handler = self._msg_actions.get(msg_type)
+            task = asyncio.create_task(handler(body))
+        else:
+            LOGGER.error(f"Unknown MSG_TYPE: {msg_type}")
 
     def on_telemetry(self, ch, method, properties, body):
         """ Called when telemetry is received.  This calls parent CSC object to emit the telemetry as a SAL message
