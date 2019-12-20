@@ -83,7 +83,7 @@ class ATDirector(Director):
         super().__init__(name, config_filename, log_filename)
         self.parent = parent
 
-        self._msg_actions = {'FILE_INGESTED_BY_OODS': self.process_file_ingested_by_oods,
+        self._msg_actions = {'IMAGE_IN_OODS': self.process_image_in_oods,
                              'ARCHIVE_HEALTH_CHECK_ACK': self.process_archiver_health_check_ack,
                              'AT_FWDR_XFER_PARAMS_ACK': self.process_xfer_params_ack,
                              'AT_FWDR_END_READOUT_ACK': self.process_at_fwdr_end_readout_ack,
@@ -299,9 +299,9 @@ class ATDirector(Director):
     def on_telemetry(self, ch, method, properties, body):
         """ Called when telemetry is received.  This calls parent CSC object to emit the telemetry as a SAL message
         """
-        task = asyncio.create_task(self.parent.send_imageRetrievalForArchiving("LATISS", body['OBSID'], 'ATArchiver'))
+        LOGGER.info(f"message was: {body}")
         ch.basic_ack(method.delivery_tag)
-        task2 = asyncio.create_task(self.send_ingest_messages_to_oods(body))
+        task = asyncio.create_task(self.parent.send_imageRetrievalForArchiving("LATISS", body['OBSID'], 'ATArchiver'))
 
     async def send_ingest_message_to_oods(self, body):
         msg = self.build_file_ingest_request_message(body)
@@ -316,15 +316,17 @@ class ATDirector(Director):
         d['FILENAME'] = msg['FILENAME']
         return d
 
-    async def process_file_ingested_by_oods(self, msg):
-        """ Handle file_ingested_by_oods message
-        @param msg: contents of file_ingested_by_oods message
+    async def process_image_in_oods(self, msg):
+        """ Handle image_in_oods message
+        @param msg: contents of image_in_oods message
         """
-        LOGGER.info("file_ingested_by_oods: msg received")
+        LOGGER.info(f"msg received: {msg}")
         camera = msg['CAMERA']
         obsid = msg['OBSID']
         archiver = msg['ARCHIVER']
-        task = asyncio.create_task(self.parent.send_imageInOODS(camera, obsid, archiver))
+        status_code = msg['STATUS_CODE']
+        description = msg['DESCRIPTION']
+        task = asyncio.create_task(self.parent.send_imageInOODS(camera, obsid, archiver, status_code, description))
 
     async def process_at_items_xferd_ack(self, msg):
         """ Handle at_items_xferd_ack message

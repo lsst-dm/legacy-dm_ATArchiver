@@ -189,6 +189,7 @@ class ATArchiveController(base):
         await self.publisher.publish_message(reply_queue, ack_msg)
 
     def build_file_transfer_completed_ack(self, data):
+        LOGGER.info(f"data was: {data}")
         d = {}
         d['MSG_TYPE'] = 'FILE_TRANSFER_COMPLETED_ACK'
         d['COMPONENT'] = 'ARCHIVE_CTRL'
@@ -201,13 +202,21 @@ class ATArchiveController(base):
     async def process_file_transfer_completed(self, msg):
         filename = msg['FILENAME']
         reply_queue = msg['REPLY_QUEUE']
-        if self.create_links_to_file(filename) is True:
-            ack_msg = self.build_file_transfer_completed_ack(msg)
-            LOGGER.info(ack_msg)
-            await self.publisher.publish_message(reply_queue, ack_msg)
+        ack_msg = self.build_file_transfer_completed_ack(msg)
+        LOGGER.info(ack_msg)
+        self.publisher.publish_message(reply_queue, ack_msg)
 
-    async def process_file_transfer_completed_ack(self, msg):
-        LOGGER.info(f'ack received: {msg}')
+        # try and create a link to the file
+        try:
+            self.create_links_to_file(filename)
+        catch Exception as e:
+            LOGGER.info(f'{e}')
+            # send an error that an error occurred trying to set up for the ingest into the OODS
+            err = f"Couldn't create link for OODS: {e}"
+            asyncio.create_task(self.send_oods_failure_message(msg, err))
+            return
+        # send an message to the OODS to ingest the file
+        asyncio.create_task(self.send_ingest_message_to_oods(msg))
 
     def create_link_to_file(self, filename, dirname):
         # remove the staging area portion from the filepath
@@ -217,17 +226,12 @@ class ATArchiveController(base):
         new_file = os.path.join(dirname, basefile)
 
         # hard link the file in the staging area
-        try:
-            # create the directory path where the file will be linked for the OODS
-            new_dir = os.path.dirname(new_file)
-            os.makedirs(new_dir, exist_ok=True)
-            # hard link the file in the staging area
-            os.link(filename, new_file)
-            LOGGER.info(f"created link to {new_file}")
-        except Exception as e:
-            LOGGER.info(f'{e}')
-            return False
-        return True
+        # create the directory path where the file will be linked for the OODS
+        new_dir = os.path.dirname(new_file)
+        os.makedirs(new_dir, exist_ok=True)
+        # hard link the file in the staging area
+        os.link(filename, new_file)
+        LOGGER.info(f"created link to {new_file}")
 
     def create_links_to_file(self, forwarder_filename):
 
@@ -244,3 +248,33 @@ class ATArchiveController(base):
             os.unlink(forwarder_filename)
 
         return linked
+
+    async def send_oods_failure_message(self, body, description):
+        """Send a message to the ATArchiver that we failed to ingest into the OODS."""
+        msg = self.build_oods_failure_message(body, description)
+        await self.publisher.publish_message('archive_ctrl_publish', msg)
+
+    async def send_ingest_message_to_oods(self, body):
+        """Send a message to the OODS to perform an ingest"""
+        msg = self.build_file_ingest_request_message(body)
+        await self.publisher.publish_message('at_publish_to_oods', msg)
+
+    def build_file_ingest_request_message(self, msg):
+        d = {}
+        d['MSG_TYPE'] = 'AT_FILE_INGEST_REQUEST'
+        d['CAMERA'] = 'LATISS'
+        d['ARCHIVER'] = 'AT'
+        d['OBSID'] = msg['OBSID']
+        d['FILENAME'] = msg['FILENAME']
+        return d
+
+    def build_oods_failure_message(self, msg, description):
+        d = {}
+        d['MSG_TYPE'] = 'IMAGE_IN_OODS'
+        d['CAMERA'] = 'LATISS'
+        d['ARCHIVER'] = 'AT'
+        d['OBSID'] = msg['OBSID']
+        d['FILENAME'] = msg['FILENAME']
+        d['STATUS_CODE'] = 1
+        d['DESCRIPTION'] = description
+        return d
