@@ -208,7 +208,7 @@ class ATArchiveController(base):
 
         # try and create a link to the file
         try:
-            self.create_links_to_file(filename)
+            dbb_file, oods_file = self.create_links_to_file(filename)
         except Exception as e:
             LOGGER.info(f'{e}')
             # send an error that an error occurred trying to set up for the ingest into the OODS
@@ -216,6 +216,7 @@ class ATArchiveController(base):
             task = asyncio.create_task(self.send_oods_failure_message(msg, err))
             return
         # send an message to the OODS to ingest the file
+        msg['FILENAME'] = oods_file
         task = asyncio.create_task(self.send_ingest_message_to_oods(msg))
 
     def create_link_to_file(self, filename, dirname):
@@ -228,26 +229,31 @@ class ATArchiveController(base):
         # hard link the file in the staging area
         # create the directory path where the file will be linked for the OODS
         new_dir = os.path.dirname(new_file)
-        os.makedirs(new_dir, exist_ok=True)
-        # hard link the file in the staging area
-        os.link(filename, new_file)
-        LOGGER.info(f"created link to {new_file}")
+        try:
+            os.makedirs(new_dir, exist_ok=True)
+            # hard link the file in the staging area
+            os.link(filename, new_file)
+            LOGGER.info(f"created link to {new_file}")
+        except Exception as e:
+            LOGGER.info(f"error trying to create link to {new_file} {e}")
+            return None
+
+        return new_file
 
     def create_links_to_file(self, forwarder_filename):
 
-        linked = False
         if self.dbb_staging_dir is not None:
-            linked = self.create_link_to_file(forwarder_filename, self.dbb_staging_dir)
+            dbb_file = self.create_link_to_file(forwarder_filename, self.dbb_staging_dir)
 
         if self.oods_staging_dir is not None:
-            linked = self.create_link_to_file(forwarder_filename, self.oods_staging_dir)
+            oods_file = self.create_link_to_file(forwarder_filename, self.oods_staging_dir)
 
-        if linked:
+        if (dbb_file is not None) and (oods_file is not None):
             # remove the original file, since we've linked it
-            LOGGER.info(f"link was created successfully; removing {forwarder_filename}")
+            LOGGER.info(f"links were created successfully; removing {forwarder_filename}")
             os.unlink(forwarder_filename)
 
-        return linked
+        return dbb_file, oods_file
 
     async def send_oods_failure_message(self, body, description):
         """Send a message to the ATArchiver that we failed to ingest into the OODS."""
