@@ -263,7 +263,7 @@ class ATArchiveController(base):
     async def send_ingest_message_to_oods(self, body):
         """Send a message to the OODS to perform an ingest"""
         msg = self.build_file_ingest_request_message(body)
-        LOGGER.info("sending ingest message to oods: {msg}")
+        LOGGER.info(f"sending ingest message to oods: {msg}")
         await self.publisher.publish_message('at_publish_to_oods', msg)
 
     def build_file_ingest_request_message(self, msg):
