@@ -61,9 +61,13 @@ class ATArchiverCSC(dm_csc):
         self.current_state = None
         LOGGER.info("************************ Starting ATArchiver ************************")
 
-    async def send_processingStatus(self, statusCode, description):
-        LOGGER.info(f"sending {statusCode}: {description}")
-        self.evt_processingStatus.set_put(statusCode=statusCode, description=description)
+    async def send_imageRetrievalForArchiving(self, camera, obsid, archiverName):
+        LOGGER.info(f"sending camera={camera}; obsid={obsid}; archiverName={archiverName}")
+        self.evt_imageRetrievalForArchiving.set_put(camera=camera, obsid=obsid, archiverName=archiverName)
+
+    async def send_imageInOODS(self, camera, obsid, archiverName, statusCode, description):
+        LOGGER.info(f"sending {camera} {obsid} {archiverName} {statusCode}: {description}")
+        self.evt_imageInOODS.set_put(camera=camera, obsid=obsid, archiverName=archiverName, statusCode=statusCode, description=description)
 
     def report_summary_state(self):
         super().report_summary_state()

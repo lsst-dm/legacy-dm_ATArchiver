@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 import asyncio
 from lsst.dm.ATArchiver.atarchiver_csc import ATArchiverCSC
 
