@@ -9,7 +9,7 @@ User=ARC
 Environment="DM_ATARCHIVER_DIR=/opt/lsst/dm_ATArchiver"
 PassEnvironment=DM_ATARCHIVER_DIR
 WorkingDirectory=/opt/lsst/dm_ATArchiver
-ExecStart=/opt/lsst/dm_ATArchiver/bin/run_atarchive_controller.sh
+ExecStart=/opt/lsst/dm_ATArchiver/bin/atarchive_controller_service.sh
 Restart=always
 
 [Install]
