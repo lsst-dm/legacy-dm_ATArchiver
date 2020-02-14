@@ -1,9 +1,9 @@
 #/bin/bash
 
-
 ##
 # Python setup
 ##
+
 
 #setup ts_idl
 export TS_IDL_DIR=/opt/lsst/ts_idl
@@ -12,7 +12,6 @@ export PYTHONPATH=${TS_IDL_DIR}/python:${PYTHONPATH}
 # setup ts_salobj
 export TS_SALOBJ_DIR=/opt/lsst/ts_salobj
 export PYTHONPATH=${TS_SALOBJ_DIR}/python:${PYTHONPATH}
-
 
 # setup ATArchiverCSC and ArchiveController
 
@@ -25,8 +24,8 @@ export PYTHONPATH=${PYTHONPATH}:${DM_ATARCHIVER_DIR}/python:${DM_CSC_BASE_DIR}/p
 # setup path for commands
 export PATH=$PATH:${DM_ATARCHIVER_DIR}/bin:${DM_CSC_BASE_DIR}/bin
 
+
 #setup sal
 source /opt/lsst/setup_SAL.env
-
 # LSST DDS DOMAIN for DDS/SAL communications
-export LSST_DDS_DOMAIN=lsatmcs
+export LSST_DDS_DOMAIN=auxtelpath
