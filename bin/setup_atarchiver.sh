@@ -1,18 +1,18 @@
-#!/bin/bash
+#/bin/bash
 
-source ~ARC/.bashrc
 
 ##
 # Python setup
 ##
 
 #setup ts_idl
-#export TS_IDL_DIR=/opt/lsst/ts_idl
-#export PYTHONPATH=${TS_IDL_DIR}/python:${PYTHONPATH}
+export TS_IDL_DIR=/opt/lsst/ts_idl
+export PYTHONPATH=${TS_IDL_DIR}/python:${PYTHONPATH}
 
 # setup ts_salobj
-#export TS_SALOBJ_DIR=/opt/lsst/ts_salobj
-#export PYTHONPATH=${TS_SALOBJ_DIR}/python:${PYTHONPATH}
+export TS_SALOBJ_DIR=/opt/lsst/ts_salobj
+export PYTHONPATH=${TS_SALOBJ_DIR}/python:${PYTHONPATH}
+
 
 # setup ATArchiverCSC and ArchiveController
 

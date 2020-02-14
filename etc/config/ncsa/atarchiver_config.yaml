@@ -1,8 +1,15 @@
 # Configuration settings for ATArchiver
 ROOT:
   REDIS_HOST: localhost
-  ATARCHIVER_REDIS_DB: 15
+  ARCHIVER_REDIS_DB: 15
   FORWARDER_PUBLISH_QUEUE: at_foreman_ack_publish
+  OODS_PUBLISH_QUEUE: at_publish_to_oods
+  OODS_CONSUME_QUEUE: oods_publish_to_at
+  ARCHIVE_CTRL_PUBLISH_QUEUE: archive_ctrl_publish # this should probably be at_archive_ctrl_publish
+  ARCHIVE_CTRL_CONSUME_QUEUE: archive_ctrl_consume # this should probably be at_archive_ctrl_consume
+  TELEMETRY_QUEUE: telemetry_queue # this should probably be at_telemetry_queue
+  CAMERA_NAME: LATISS
+  ARCHIVER_NAME: AT
 
   ACK_TIMEOUT: 10
 
@@ -16,7 +23,7 @@ ROOT:
     ARCHIVE_LOGIN: ARC
     ARCHIVE_IP: 141.142.238.15
     CHECKSUM_TYPE: MD5   # Current available options: MD5, CRC-32 
-    ATFORWARDER_STAGING: /data/staging/atforwarder
+    FORWARDER_STAGING: /data/staging/atforwarder
     OODS_STAGING: /data/staging/oods
     DBB_STAGING: /data/staging/dbb
   ATS:
