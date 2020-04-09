@@ -49,10 +49,10 @@ class ATArchiverCSC(ArchiverCSC):
         self.camera_remote.evt_endReadout.callback = self.endReadoutCallback
         self.camera_remote.evt_startIntegration.callback = self.startIntegrationCallback
 
-        efd_events = {'largeFileObjectAvailable'}
-        self.efd_remote = salobj.Remote(domain, "EFD", index=0, readonly=True, include=efd_events,
+        aths_events = {'largeFileObjectAvailable'}
+        self.aths_remote = salobj.Remote(domain, "ATHeaderService", index=0, readonly=True, include=aths_events,
                                         evt_max_history=0)
-        self.efd_remote.evt_largeFileObjectAvailable.callback = self.largeFileObjectAvailableCallback
+        self.aths_remote.evt_largeFileObjectAvailable.callback = self.largeFileObjectAvailableCallback
 
         self.director = ATDirector(self, "ATArchiver", "atarchiver_config.yaml", "ATArchiverCSC.log")
         self.director.configure()
