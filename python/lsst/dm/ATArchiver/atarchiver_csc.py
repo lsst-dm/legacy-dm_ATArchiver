@@ -32,10 +32,9 @@ LOGGER = logging.getLogger(__name__)
 
 class ATArchiverCSC(ArchiverCSC):
 
-    def __init__(self, schema_file, index, config_dir=None, initial_state=salobj.State.STANDBY,
+    def __init__(self, index, config_dir=None, initial_state=salobj.State.STANDBY,
                  initial_simulation_mode=0):
-        schema_path = pathlib.Path(__file__).resolve().parents[4].joinpath("schema", schema_file)
-        super().__init__("ATArchiver", index=index, schema_path=schema_path,
+        super().__init__("ATArchiver", index=index,
                          config_dir=config_dir, initial_state=initial_state,
                          initial_simulation_mode=initial_simulation_mode)
 
