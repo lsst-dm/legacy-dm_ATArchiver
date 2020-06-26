@@ -62,7 +62,3 @@ class ATArchiverCSC(ArchiverCSC):
 
         self.current_state = None
         LOGGER.info("************************ Starting ATArchiver ************************")
-
-    @staticmethod
-    def get_config_pkg():
-        return "dm_config_at"
