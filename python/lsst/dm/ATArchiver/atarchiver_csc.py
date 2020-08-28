@@ -32,11 +32,8 @@ LOGGER = logging.getLogger(__name__)
 
 class ATArchiverCSC(ArchiverCSC):
 
-    def __init__(self, index, config_dir=None, initial_state=salobj.State.STANDBY,
-                 initial_simulation_mode=0):
-        super().__init__("ATArchiver", index=index,
-                         config_dir=config_dir, initial_state=initial_state,
-                         initial_simulation_mode=initial_simulation_mode)
+    def __init__(self, index):
+        super().__init__("ATArchiver", index=index, initial_state=salobj.State.STANDBY)
 
         domain = salobj.Domain()
 
