@@ -32,14 +32,16 @@ LOGGER = logging.getLogger(__name__)
 
 class ATArchiverCSC(ArchiverCSC):
 
-    def __init__(self, index):
-        # schema_path = pathlib.Path(__file__).resolve().parents[4].joinpath("schema", schema_file)
-        super().__init__("ATArchiver", index=index, 
-                         initial_state=salobj.State.STANDBY)
+    def __init__(self, schema_file, index, config_dir=None, initial_state=salobj.State.STANDBY,
+                 initial_simulation_mode=0):
+        schema_path = pathlib.Path(__file__).resolve().parents[4].joinpath("schema", schema_file)
+        super().__init__("ATArchiver", index=index, schema_path=schema_path,
+                         config_dir=config_dir, initial_state=initial_state,
+                         initial_simulation_mode=initial_simulation_mode)
 
         domain = salobj.Domain()
 
-        salinfo = salobj.SalInfo(domain=domain, name="ATArchiver", index=index)
+        salinfo = salobj.SalInfo(domain=domain, name="ATArchiver", index=0)
 
         camera_events = {'endReadout', 'startIntegration'}
         self.camera_remote = salobj.Remote(domain, "ATCamera", index=0, readonly=True, include=camera_events,
@@ -60,3 +62,7 @@ class ATArchiverCSC(ArchiverCSC):
 
         self.current_state = None
         LOGGER.info("************************ Starting ATArchiver ************************")
+
+    @staticmethod
+    def get_config_pkg():
+        return "dm_config_at"
