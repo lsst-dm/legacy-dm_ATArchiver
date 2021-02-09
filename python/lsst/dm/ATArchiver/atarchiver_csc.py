@@ -35,18 +35,14 @@ class ATArchiverCSC(ArchiverCSC):
     def __init__(self):
         super().__init__("ATArchiver", initial_state=salobj.State.STANDBY)
 
-        domain = salobj.Domain()
-
-        salinfo = salobj.SalInfo(domain=domain, name="ATArchiver")
-
         camera_events = {'endReadout', 'startIntegration'}
-        self.camera_remote = salobj.Remote(domain, "ATCamera", readonly=True, include=camera_events,
+        self.camera_remote = salobj.Remote(self.domain, "ATCamera", readonly=True, include=camera_events,
                                            evt_max_history=0)
         self.camera_remote.evt_endReadout.callback = self.endReadoutCallback
         self.camera_remote.evt_startIntegration.callback = self.startIntegrationCallback
 
         aths_events = {'largeFileObjectAvailable'}
-        self.aths_remote = salobj.Remote(domain, "ATHeaderService", readonly=True, include=aths_events,
+        self.aths_remote = salobj.Remote(self.domain, "ATHeaderService", readonly=True, include=aths_events,
                                         evt_max_history=0)
         self.aths_remote.evt_largeFileObjectAvailable.callback = self.largeFileObjectAvailableCallback
 
